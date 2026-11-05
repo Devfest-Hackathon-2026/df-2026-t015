@@ -1,0 +1,47 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:iterinerary/app.dart';
+import 'package:iterinerary/constants/app_strings.dart';
+
+/// モック API で「今日の旅程 → 遅れを伝える → 組み直し案 → 確定」を一通り操作する。
+void main() {
+  testWidgets('遅れを伝えて組み直し案を確定できる', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const ProviderScope(child: IterineraryApp()));
+    await tester.pumpAndSettle();
+
+    // 今日の旅程
+    expect(find.text('みなと町 日帰り旅'), findsOneWidget);
+    expect(find.text(AppStrings.todayDelayButton), findsOneWidget);
+
+    // 遅れを伝える：10 分なら間に合う
+    await tester.tap(find.text(AppStrings.todayDelayButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('10分'));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.delayOkTitle), findsOneWidget);
+
+    // 40 分なら組み直しが必要
+    await tester.tap(find.text('40分'));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.delayGoReplan), findsOneWidget);
+
+    // 組み直し案：理由文が届くまで待ってから確定する
+    await tester.tap(find.text(AppStrings.delayGoReplan));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.replanAccept), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('港の資料館'), findsWidgets);
+
+    await tester.tap(find.text(AppStrings.replanAccept));
+    await tester.pumpAndSettle();
+
+    // 確定後は今日の旅程に戻り、置き換え先が入っている
+    expect(find.text(AppStrings.todayDelayButton), findsOneWidget);
+    expect(find.text('港の資料館'), findsOneWidget);
+  });
+}
