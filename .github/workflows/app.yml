@@ -1,15 +1,14 @@
 name: app
 
+# app/ 以下に変更があったときだけ実行する
 on:
   pull_request:
     paths:
       - 'app/**'
-      - '.github/workflows/app.yml'
   push:
     branches: [main]
     paths:
       - 'app/**'
-      - '.github/workflows/app.yml'
   workflow_dispatch:
 
 # 同じブランチ / PR で新しい push があれば古い実行を止める
