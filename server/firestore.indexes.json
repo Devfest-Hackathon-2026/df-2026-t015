@@ -1,0 +1,10 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "itineraries", "fieldPath": "data", "indexes": [] },
+    { "collectionGroup": "replans", "fieldPath": "data", "indexes": [] },
+    { "collectionGroup": "itineraries", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "replans", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "rateLimits", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+  ]
+}

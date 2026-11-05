@@ -1,14 +1,59 @@
 package replans
 
-// GET /itineraries/:id/replans/:replanId/explanation
-// Gemini が生成する、組み直し案の変更理由を返す（F-05）。
-//
-// 入力（パス）: id（旅程ID）、replanId（組み直し案ID）。
-// 入力（クエリ）: optionId が必須。
-// 認証: Bearer の Firebase ID token を検証し、旅程の ownerUid と uid を照合する。
-// 出力（200、JSON / UTF-8）: status（pending / ready / failed）と、完了時の text。
-//   pending の間はクライアントが1秒間隔で取得する。
-//   failed の場合は画面で定型文を表示し、案の確定は可能にする。
-// エラー: 400 INVALID_ARGUMENT、401 UNAUTHENTICATED、404 NOT_FOUND、429 RATE_LIMITED。
-//
-// 実装する処理: 認証・所有者確認 → 対象の案を確認 → 理由文の生成状況と結果を返す。
+import (
+	"context"
+	"encoding/json"
+	"github.com/create-alt/gen-TLE/server/internal/service"
+	"net/http"
+	"time"
+)
+
+func Explanation(app *service.App) http.HandlerFunc {
+	return service.Handle(func(w http.ResponseWriter, r *http.Request) error {
+		optionID := r.URL.Query().Get("optionId")
+		if !service.ValidID(optionID) {
+			return service.Invalid("optionId が必要です")
+		}
+		value, err := app.OwnedReplan(r)
+		if err != nil {
+			return err
+		}
+		var option *service.Option
+		for i := range value.Options {
+			if value.Options[i].OptionID == optionID {
+				option = &value.Options[i]
+				break
+			}
+		}
+		if option == nil {
+			return service.Invalid("optionId が不正です")
+		}
+		result, claimed, err := app.Store.ClaimExplanation(r.Context(), service.UID(r), r.PathValue("id"), r.PathValue("replanId"), optionID)
+		if err != nil {
+			return err
+		}
+		if claimed {
+			data, _ := json.Marshal(option)
+			var output struct {
+				Text string `json:"text"`
+			}
+			schema := service.ObjectSchema(map[string]any{"text": map[string]string{"type": "string"}})
+			generationErr := app.AI.Generate(r.Context(), "次の旅程変更の理由を日本語で短く説明してください。差分にない事実は追加しないでください。\n"+string(data), schema, &output)
+			status := "ready"
+			if generationErr != nil || !service.Text(output.Text, 1, 2000) {
+				status = "failed"
+				output.Text = ""
+			}
+			final := service.Explanation{Status: status, Text: output.Text}
+			// キャンセル後も処理権を解放し、ほかの取得が pending のままにならないようにする。
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 3*time.Second)
+			defer cancel()
+			if err := app.Store.FinishExplanation(ctx, service.UID(r), r.PathValue("id"), r.PathValue("replanId"), optionID, result.Lease, final); err != nil {
+				return err
+			}
+			result = final
+		}
+		service.JSON(w, 200, result)
+		return nil
+	})
+}
