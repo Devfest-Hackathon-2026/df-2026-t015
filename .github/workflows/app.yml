@@ -1,0 +1,35 @@
+name: app
+
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/app.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: 開発規約（StatefulWidget / Color(0x の直接指定）
+        run: bash tool/check_conventions.sh
+      - name: 生成コードが最新か
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          git diff --exit-code -- lib
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
