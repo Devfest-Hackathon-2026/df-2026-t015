@@ -118,16 +118,40 @@ Map<String, dynamic> _$SummaryToJson(_Summary instance) => <String, dynamic>{
 
 _ItineraryStart _$ItineraryStartFromJson(Map<String, dynamic> json) =>
     _ItineraryStart(
-      placeId: json['placeId'] as String,
+      placeId: json['placeId'] as String?,
       name: json['name'] as String,
+      location: json['location'] == null
+          ? null
+          : LatLng.fromJson(json['location'] as Map<String, dynamic>),
       departAt: DateTime.parse(json['departAt'] as String),
     );
 
 Map<String, dynamic> _$ItineraryStartToJson(_ItineraryStart instance) =>
     <String, dynamic>{
-      'placeId': instance.placeId,
+      'placeId': ?instance.placeId,
       'name': instance.name,
+      'location': ?instance.location?.toJson(),
       'departAt': instance.departAt.toIso8601String(),
+    };
+
+_ItineraryEnd _$ItineraryEndFromJson(Map<String, dynamic> json) =>
+    _ItineraryEnd(
+      placeId: json['placeId'] as String?,
+      name: json['name'] as String,
+      location: json['location'] == null
+          ? null
+          : LatLng.fromJson(json['location'] as Map<String, dynamic>),
+      arriveBy: json['arriveBy'] as String,
+      arriveAt: DateTime.parse(json['arriveAt'] as String),
+    );
+
+Map<String, dynamic> _$ItineraryEndToJson(_ItineraryEnd instance) =>
+    <String, dynamic>{
+      'placeId': ?instance.placeId,
+      'name': instance.name,
+      'location': ?instance.location?.toJson(),
+      'arriveBy': instance.arriveBy,
+      'arriveAt': instance.arriveAt.toIso8601String(),
     };
 
 _DroppedPlace _$DroppedPlaceFromJson(Map<String, dynamic> json) =>
@@ -150,7 +174,7 @@ _Itinerary _$ItineraryFromJson(Map<String, dynamic> json) => _Itinerary(
   title: json['title'] as String,
   date: json['date'] as String,
   start: ItineraryStart.fromJson(json['start'] as Map<String, dynamic>),
-  endBy: json['endBy'] as String,
+  end: ItineraryEnd.fromJson(json['end'] as Map<String, dynamic>),
   items:
       (json['items'] as List<dynamic>?)
           ?.map((e) => Item.fromJson(e as Map<String, dynamic>))
@@ -179,7 +203,7 @@ Map<String, dynamic> _$ItineraryToJson(_Itinerary instance) =>
       'title': instance.title,
       'date': instance.date,
       'start': instance.start.toJson(),
-      'endBy': instance.endBy,
+      'end': instance.end.toJson(),
       'items': instance.items.map((e) => e.toJson()).toList(),
       'legs': instance.legs.map((e) => e.toJson()).toList(),
       'summary': instance.summary.toJson(),
@@ -187,12 +211,47 @@ Map<String, dynamic> _$ItineraryToJson(_Itinerary instance) =>
       'expiresAt': ?instance.expiresAt?.toIso8601String(),
     };
 
+_ItineraryListStart _$ItineraryListStartFromJson(Map<String, dynamic> json) =>
+    _ItineraryListStart(
+      name: json['name'] as String,
+      departAt: DateTime.parse(json['departAt'] as String),
+    );
+
+Map<String, dynamic> _$ItineraryListStartToJson(_ItineraryListStart instance) =>
+    <String, dynamic>{
+      'name': instance.name,
+      'departAt': instance.departAt.toIso8601String(),
+    };
+
+_ItineraryListEnd _$ItineraryListEndFromJson(Map<String, dynamic> json) =>
+    _ItineraryListEnd(
+      name: json['name'] as String,
+      arriveAt: DateTime.parse(json['arriveAt'] as String),
+    );
+
+Map<String, dynamic> _$ItineraryListEndToJson(_ItineraryListEnd instance) =>
+    <String, dynamic>{
+      'name': instance.name,
+      'arriveAt': instance.arriveAt.toIso8601String(),
+    };
+
 _ItineraryListEntry _$ItineraryListEntryFromJson(Map<String, dynamic> json) =>
     _ItineraryListEntry(
       id: json['id'] as String,
       title: json['title'] as String,
       date: json['date'] as String,
+      start: ItineraryListStart.fromJson(json['start'] as Map<String, dynamic>),
+      end: ItineraryListEnd.fromJson(json['end'] as Map<String, dynamic>),
+      placeCount: (json['placeCount'] as num?)?.toInt() ?? 0,
+      placeNames:
+          (json['placeNames'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const <String>[],
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      expiresAt: json['expiresAt'] == null
+          ? null
+          : DateTime.parse(json['expiresAt'] as String),
     );
 
 Map<String, dynamic> _$ItineraryListEntryToJson(_ItineraryListEntry instance) =>
@@ -200,5 +259,28 @@ Map<String, dynamic> _$ItineraryListEntryToJson(_ItineraryListEntry instance) =>
       'id': instance.id,
       'title': instance.title,
       'date': instance.date,
+      'start': instance.start.toJson(),
+      'end': instance.end.toJson(),
+      'placeCount': instance.placeCount,
+      'placeNames': instance.placeNames,
       'updatedAt': instance.updatedAt.toIso8601String(),
+      'expiresAt': ?instance.expiresAt?.toIso8601String(),
+    };
+
+_ItineraryPage _$ItineraryPageFromJson(Map<String, dynamic> json) =>
+    _ItineraryPage(
+      itineraries:
+          (json['itineraries'] as List<dynamic>?)
+              ?.map(
+                (e) => ItineraryListEntry.fromJson(e as Map<String, dynamic>),
+              )
+              .toList() ??
+          const <ItineraryListEntry>[],
+      nextCursor: json['nextCursor'] as String?,
+    );
+
+Map<String, dynamic> _$ItineraryPageToJson(_ItineraryPage instance) =>
+    <String, dynamic>{
+      'itineraries': instance.itineraries.map((e) => e.toJson()).toList(),
+      'nextCursor': ?instance.nextCursor,
     };

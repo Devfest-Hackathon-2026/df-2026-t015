@@ -57,6 +57,20 @@ class HttpItineraryApi implements ItineraryApi {
     }
   }
 
+  /// 本文のない応答（204）を返す API 用
+  Future<void> _sendNoContent(
+    Future<Response<dynamic>> Function() request,
+  ) async {
+    try {
+      await request();
+    } on DioException catch (e) {
+      throw ApiException.fromResponse(
+        e.response?.statusCode,
+        e.response?.data ?? e.message,
+      );
+    }
+  }
+
   List<T> _list<T>(
     Map<String, dynamic> json,
     String key,
@@ -100,10 +114,15 @@ class HttpItineraryApi implements ItineraryApi {
       );
 
   @override
-  Future<List<ItineraryListEntry>> myItineraries() async {
-    final json = await _send(() => _dio.get('/me/itineraries'));
-    return _list(json, 'itineraries', ItineraryListEntry.fromJson);
-  }
+  Future<ItineraryPage> myItineraries({int? limit, String? cursor}) async =>
+      ItineraryPage.fromJson(
+        await _send(
+          () => _dio.get(
+            '/me/itineraries',
+            queryParameters: {'limit': ?limit, 'cursor': ?cursor},
+          ),
+        ),
+      );
 
   @override
   Future<Itinerary> getItinerary(String id) async =>
@@ -194,6 +213,68 @@ class HttpItineraryApi implements ItineraryApi {
         data: request.toJson(),
         options: _ifMatch(version),
       ),
+    ),
+  );
+
+  @override
+  Future<List<NearbyPlace>> nearbyPlaces({
+    required LatLng center,
+    int? radius,
+    String? query,
+  }) async {
+    final json = await _send(
+      () => _dio.get(
+        '/places/nearby',
+        queryParameters: {
+          'lat': center.lat,
+          'lng': center.lng,
+          'radius': ?radius,
+          'q': ?query,
+        },
+      ),
+    );
+    return _list(json, 'places', NearbyPlace.fromJson);
+  }
+
+  @override
+  Future<PlaceDetail> placeDetail(String placeId, {String? date}) async =>
+      PlaceDetail.fromJson(
+        await _send(
+          () => _dio.get(
+            '/places/${Uri.encodeComponent(placeId)}',
+            queryParameters: {'date': ?date},
+          ),
+        ),
+      );
+
+  @override
+  Future<Itinerary> renameItinerary(
+    String id, {
+    required String title,
+    required int version,
+  }) async => Itinerary.fromJson(
+    await _send(
+      () => _dio.patch(
+        '/itineraries/$id',
+        data: {'title': title},
+        options: _ifMatch(version),
+      ),
+    ),
+  );
+
+  @override
+  Future<void> deleteItinerary(String id, {required int version}) =>
+      _sendNoContent(
+        () => _dio.delete('/itineraries/$id', options: _ifMatch(version)),
+      );
+
+  @override
+  Future<Itinerary> copyItinerary(
+    String id,
+    CopyItineraryRequest request,
+  ) async => Itinerary.fromJson(
+    await _send(
+      () => _dio.post('/itineraries/$id/copy', data: request.toJson()),
     ),
   );
 }

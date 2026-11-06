@@ -33,6 +33,8 @@ abstract final class AppStrings {
   static const planNeedStart = '出発地を選んでください';
   static const planDefaultTitleSuffix = 'の旅';
   static const planMustInfeasible = '「必須」の予定がすべては入りきりません。優先度か終わりたい時刻を見直してください';
+  static const planEndInfeasible = '行き先を外しても、終わりたい時刻までに終わる場所に着けません。時刻を見直してください';
+  static const planItineraryLimit = '保存できる旅程の上限に達しています。使わない旅程を削除してください';
   static const planStartSearchTitle = '出発地を探す';
 
   // 3.2 今日の旅程

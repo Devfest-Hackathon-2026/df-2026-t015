@@ -6,6 +6,12 @@ enum ApiErrorCode {
   versionConflict('VERSION_CONFLICT'),
   replanExpired('REPLAN_EXPIRED'),
   mustItemsInfeasible('MUST_ITEMS_INFEASIBLE'),
+
+  /// 行き先を外しても、終わりの時刻までに終わる場所に着けない
+  endInfeasible('END_INFEASIBLE'),
+
+  /// 保存できる旅程の上限（1 人 20 件）を超える
+  itineraryLimit('ITINERARY_LIMIT'),
   rateLimited('RATE_LIMITED'),
   upstreamError('UPSTREAM_ERROR'),
 

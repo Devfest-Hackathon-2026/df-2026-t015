@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../config/app_config.dart';
+import '../constants/api_constraints.dart';
 import 'api/http_itinerary_api.dart';
 import 'api/itinerary_api.dart';
 import 'api/mock_itinerary_api.dart';
@@ -25,11 +26,17 @@ final itineraryApiProvider = Provider<ItineraryApi>((ref) {
   return HttpItineraryApi(baseUrl: config.apiBaseUrl, idToken: auth.idToken);
 });
 
-/// 自分の旅程一覧（F-06）
+/// 自分の旅程一覧（F-08）。
+///
+/// 1 人が保存できる旅程は [ApiConstraints.itineraryMaxCount] 件までなので、
+/// その件数を 1 回で取得して続きのページは読まない。
 final myItinerariesProvider =
-    FutureProvider.autoDispose<List<ItineraryListEntry>>(
-      (ref) => ref.watch(itineraryApiProvider).myItineraries(),
-    );
+    FutureProvider.autoDispose<List<ItineraryListEntry>>((ref) async {
+      final page = await ref
+          .watch(itineraryApiProvider)
+          .myItineraries(limit: ApiConstraints.itineraryMaxCount);
+      return page.itineraries;
+    });
 
 /// 旅程 1 件。更新系 API の結果はここに反映して、各画面が同じ旅程を見るようにする。
 final itineraryProvider =

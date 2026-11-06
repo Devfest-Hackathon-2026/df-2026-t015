@@ -11,6 +11,10 @@ enum ReplanWarningType {
   missTransit,
   @JsonValue('must_at_risk')
   mustAtRisk,
+
+  /// 遅れのために end.arriveBy までに終わる場所に着けなくなる
+  @JsonValue('end_at_risk')
+  endAtRisk,
   unknown,
 }
 

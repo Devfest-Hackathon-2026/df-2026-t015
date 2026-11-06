@@ -63,6 +63,8 @@ class PlanScreen extends HookConsumerWidget {
 
     final entries = useState<List<PlanEntry>>(const []);
     final start = useState<Place?>(null);
+    // 編集のとき、出発地を選び直したか（選び直していなければ今の出発地を送り直す）
+    final startPicked = useState(false);
     final date = useState(DateUtils.dateOnly(DateTime.now()));
     final departAt = useState(
       const TimeOfDay(hour: _defaultDepartHour, minute: 0),
@@ -94,14 +96,15 @@ class PlanScreen extends HookConsumerWidget {
           ),
       ];
       start.value = Place(
-        placeId: itinerary.start.placeId,
+        placeId: itinerary.start.placeId ?? '',
         name: itinerary.start.name,
+        location: itinerary.start.location,
       );
       date.value = DateTime.parse(itinerary.date);
       departAt.value = TimeOfDay.fromDateTime(
         itinerary.start.departAt.toLocal(),
       );
-      final (h, m) = Format.parseHhmm(itinerary.endBy);
+      final (h, m) = Format.parseHhmm(itinerary.end.arriveBy);
       endBy.value = TimeOfDay(hour: h, minute: m);
       return null;
     }, [existing?.value]);
@@ -145,7 +148,10 @@ class PlanScreen extends HookConsumerWidget {
         title: AppStrings.planStartSearchTitle,
         hint: AppStrings.planAddHint,
       );
-      if (place != null) start.value = place;
+      if (place != null) {
+        start.value = place;
+        startPicked.value = true;
+      }
     }
 
     Future<void> pickDepart() async {
@@ -185,12 +191,29 @@ class PlanScreen extends HookConsumerWidget {
       try {
         final places = entries.value.map((e) => e.toInput()).toList();
         final endByText = Format.hhmm(endBy.value.hour, endBy.value.minute);
+        final departText = Format.hhmm(
+          departAt.value.hour,
+          departAt.value.minute,
+        );
+        final current = existing?.value;
         final Itinerary itinerary;
-        if (_isEdit) {
+        if (_isEdit && current != null) {
           itinerary = await ref
               .read(itineraryProvider(itineraryId!).notifier)
               .updatePlaces(
-                UpdatePlacesRequest(endBy: endByText, places: places),
+                UpdatePlacesRequest(
+                  start: startPicked.value
+                      ? StartInput(
+                          placeId: startPlace.placeId,
+                          departAt: departText,
+                        )
+                      : StartInput.fromEndpoint(
+                          current.start,
+                          departAt: departText,
+                        ),
+                  end: EndInput.fromEndpoint(current.end, arriveBy: endByText),
+                  places: places,
+                ),
               );
         } else {
           itinerary = await api.createItinerary(
@@ -199,12 +222,10 @@ class PlanScreen extends HookConsumerWidget {
               date: Format.isoDate(date.value),
               start: StartInput(
                 placeId: startPlace.placeId,
-                departAt: Format.hhmm(
-                  departAt.value.hour,
-                  departAt.value.minute,
-                ),
+                departAt: departText,
               ),
-              endBy: endByText,
+              // 終わる場所を選ぶ画面ができるまでは、出発地に戻る旅程にする
+              end: EndInput(placeId: startPlace.placeId, arriveBy: endByText),
               places: places,
             ),
           );
@@ -216,9 +237,12 @@ class PlanScreen extends HookConsumerWidget {
         showErrorSnackBar(
           context,
           e,
-          fallback: e.code == ApiErrorCode.mustItemsInfeasible
-              ? AppStrings.planMustInfeasible
-              : null,
+          fallback: switch (e.code) {
+            ApiErrorCode.mustItemsInfeasible => AppStrings.planMustInfeasible,
+            ApiErrorCode.endInfeasible => AppStrings.planEndInfeasible,
+            ApiErrorCode.itineraryLimit => AppStrings.planItineraryLimit,
+            _ => null,
+          },
         );
       } finally {
         submitting.value = false;
