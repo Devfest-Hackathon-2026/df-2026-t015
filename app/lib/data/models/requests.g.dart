@@ -26,15 +26,37 @@ const _$PriorityEnumMap = {
 };
 
 _StartInput _$StartInputFromJson(Map<String, dynamic> json) => _StartInput(
-  placeId: json['placeId'] as String,
+  placeId: json['placeId'] as String?,
+  location: json['location'] == null
+      ? null
+      : LatLng.fromJson(json['location'] as Map<String, dynamic>),
+  name: json['name'] as String?,
   departAt: json['departAt'] as String,
 );
 
 Map<String, dynamic> _$StartInputToJson(_StartInput instance) =>
     <String, dynamic>{
-      'placeId': instance.placeId,
+      'placeId': ?instance.placeId,
+      'location': ?instance.location?.toJson(),
+      'name': ?instance.name,
       'departAt': instance.departAt,
     };
+
+_EndInput _$EndInputFromJson(Map<String, dynamic> json) => _EndInput(
+  placeId: json['placeId'] as String?,
+  location: json['location'] == null
+      ? null
+      : LatLng.fromJson(json['location'] as Map<String, dynamic>),
+  name: json['name'] as String?,
+  arriveBy: json['arriveBy'] as String,
+);
+
+Map<String, dynamic> _$EndInputToJson(_EndInput instance) => <String, dynamic>{
+  'placeId': ?instance.placeId,
+  'location': ?instance.location?.toJson(),
+  'name': ?instance.name,
+  'arriveBy': instance.arriveBy,
+};
 
 _CreateItineraryRequest _$CreateItineraryRequestFromJson(
   Map<String, dynamic> json,
@@ -42,7 +64,7 @@ _CreateItineraryRequest _$CreateItineraryRequestFromJson(
   title: json['title'] as String,
   date: json['date'] as String,
   start: StartInput.fromJson(json['start'] as Map<String, dynamic>),
-  endBy: json['endBy'] as String,
+  end: EndInput.fromJson(json['end'] as Map<String, dynamic>),
   places: (json['places'] as List<dynamic>)
       .map((e) => PlaceInput.fromJson(e as Map<String, dynamic>))
       .toList(),
@@ -54,13 +76,19 @@ Map<String, dynamic> _$CreateItineraryRequestToJson(
   'title': instance.title,
   'date': instance.date,
   'start': instance.start.toJson(),
-  'endBy': instance.endBy,
+  'end': instance.end.toJson(),
   'places': instance.places.map((e) => e.toJson()).toList(),
 };
 
 _UpdatePlacesRequest _$UpdatePlacesRequestFromJson(Map<String, dynamic> json) =>
     _UpdatePlacesRequest(
-      endBy: json['endBy'] as String?,
+      date: json['date'] as String?,
+      start: json['start'] == null
+          ? null
+          : StartInput.fromJson(json['start'] as Map<String, dynamic>),
+      end: json['end'] == null
+          ? null
+          : EndInput.fromJson(json['end'] as Map<String, dynamic>),
       places: (json['places'] as List<dynamic>)
           .map((e) => PlaceInput.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -69,7 +97,9 @@ _UpdatePlacesRequest _$UpdatePlacesRequestFromJson(Map<String, dynamic> json) =>
 Map<String, dynamic> _$UpdatePlacesRequestToJson(
   _UpdatePlacesRequest instance,
 ) => <String, dynamic>{
-  'endBy': ?instance.endBy,
+  'date': ?instance.date,
+  'start': ?instance.start?.toJson(),
+  'end': ?instance.end?.toJson(),
   'places': instance.places.map((e) => e.toJson()).toList(),
 };
 
@@ -104,3 +134,14 @@ Map<String, dynamic> _$AddItemRequestToJson(_AddItemRequest instance) =>
       'priority': _$PriorityEnumMap[instance.priority]!,
       'insertAfterItemId': ?instance.insertAfterItemId,
     };
+
+_CopyItineraryRequest _$CopyItineraryRequestFromJson(
+  Map<String, dynamic> json,
+) => _CopyItineraryRequest(
+  date: json['date'] as String,
+  title: json['title'] as String?,
+);
+
+Map<String, dynamic> _$CopyItineraryRequestToJson(
+  _CopyItineraryRequest instance,
+) => <String, dynamic>{'date': instance.date, 'title': ?instance.title};

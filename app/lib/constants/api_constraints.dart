@@ -28,6 +28,33 @@ abstract final class ApiConstraints {
 
   /// 旅程の保存期間（旅行日から）
   static const itineraryTtl = Duration(days: 30);
+
+  /// 1 人が保存できる旅程の件数
+  static const itineraryMaxCount = 20;
+
+  /// 旅程名（PATCH /itineraries/:id の title）の長さ
+  static const titleMinLength = 1;
+  static const titleMaxLength = 50;
+
+  /// GET /me/itineraries の limit
+  static const myItinerariesLimitMin = 1;
+  static const myItinerariesLimitMax = 50;
+  static const myItinerariesLimitDefault = 20;
+
+  /// GET /me/itineraries の placeNames の最大件数
+  static const listPlaceNamesMaxCount = 3;
+
+  /// GET /places/nearby の radius（m）
+  static const nearbyRadiusMin = 100;
+  static const nearbyRadiusMax = 5000;
+  static const nearbyRadiusDefault = 1000;
+
+  /// GET /places/nearby の q の長さ
+  static const nearbyQueryMinLength = 1;
+  static const nearbyQueryMaxLength = 100;
+
+  /// GET /places/nearby の最大件数
+  static const nearbyMaxResults = 20;
 }
 
 /// API のヘッダー名など、通信で使う固定値。

@@ -27,6 +27,7 @@ Map<String, dynamic> _$ReplanWarningToJson(_ReplanWarning instance) =>
 const _$ReplanWarningTypeEnumMap = {
   ReplanWarningType.missTransit: 'miss_transit',
   ReplanWarningType.mustAtRisk: 'must_at_risk',
+  ReplanWarningType.endAtRisk: 'end_at_risk',
   ReplanWarningType.unknown: 'unknown',
 };
 

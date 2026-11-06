@@ -1189,7 +1189,8 @@ as bool,
 /// @nodoc
 mixin _$Summary {
 
- int get moveMin; PriceTotal get priceTotal; DateTime get endAt;
+ int get moveMin; PriceTotal get priceTotal;/// 終わる場所に着く時刻
+ DateTime get endAt;
 /// Create a copy of Summary
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1404,6 +1405,7 @@ class _Summary implements Summary {
 
 @override final  int moveMin;
 @override final  PriceTotal priceTotal;
+/// 終わる場所に着く時刻
 @override final  DateTime endAt;
 
 /// Create a copy of Summary
@@ -1483,7 +1485,7 @@ $PriceTotalCopyWith<$Res> get priceTotal {
 /// @nodoc
 mixin _$ItineraryStart {
 
- String get placeId; String get name; DateTime get departAt;
+ String? get placeId; String get name; LatLng? get location; DateTime get departAt;
 /// Create a copy of ItineraryStart
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1497,20 +1499,20 @@ $ItineraryStartCopyWith<ItineraryStart> get copyWith => _$ItineraryStartCopyWith
 @override
 bool operator ==(Object other) {
   final _this = this as ItineraryStart;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryStart&&(identical(other.placeId, _this.placeId) || other.placeId == _this.placeId)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.departAt, _this.departAt) || other.departAt == _this.departAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryStart&&(identical(other.placeId, _this.placeId) || other.placeId == _this.placeId)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.location, _this.location) || other.location == _this.location)&&(identical(other.departAt, _this.departAt) || other.departAt == _this.departAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as ItineraryStart;
-  return Object.hash(runtimeType,_this.placeId,_this.name,_this.departAt);
+  return Object.hash(runtimeType,_this.placeId,_this.name,_this.location,_this.departAt);
 }
 
 @override
 String toString() {
   final _this = this as ItineraryStart;
-  return 'ItineraryStart(placeId: ${_this.placeId}, name: ${_this.name}, departAt: ${_this.departAt})';
+  return 'ItineraryStart(placeId: ${_this.placeId}, name: ${_this.name}, location: ${_this.location}, departAt: ${_this.departAt})';
 }
 
 
@@ -1521,11 +1523,11 @@ abstract mixin class $ItineraryStartCopyWith<$Res>  {
   factory $ItineraryStartCopyWith(ItineraryStart value, $Res Function(ItineraryStart) _then) = _$ItineraryStartCopyWithImpl;
 @useResult
 $Res call({
- String placeId, String name, DateTime departAt
+ String? placeId, String name, LatLng? location, DateTime departAt
 });
 
 
-
+$LatLngCopyWith<$Res>? get location;
 
 }
 /// @nodoc
@@ -1538,15 +1540,28 @@ class _$ItineraryStartCopyWithImpl<$Res>
 
 /// Create a copy of ItineraryStart
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? placeId = null,Object? name = null,Object? departAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? placeId = freezed,Object? name = null,Object? location = freezed,Object? departAt = null,}) {
   return _then(ItineraryStart(
-placeId: null == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
-as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
-as String,departAt: null == departAt ? _self.departAt : departAt // ignore: cast_nullable_to_non_nullable
+placeId: freezed == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
+as String?,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
+as LatLng?,departAt: null == departAt ? _self.departAt : departAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
   ));
 }
+/// Create a copy of ItineraryStart
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LatLngCopyWith<$Res>? get location {
+    if (_self.location == null) {
+    return null;
+  }
 
+  return $LatLngCopyWith<$Res>(_self.location!, (value) {
+    return _then(_self.copyWith(location: value));
+  });
+}
 }
 
 
@@ -1628,10 +1643,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String placeId,  String name,  DateTime departAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? placeId,  String name,  LatLng? location,  DateTime departAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ItineraryStart() when $default != null:
-return $default(_that.placeId,_that.name,_that.departAt);case _:
+return $default(_that.placeId,_that.name,_that.location,_that.departAt);case _:
   return orElse();
 
 }
@@ -1649,10 +1664,10 @@ return $default(_that.placeId,_that.name,_that.departAt);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String placeId,  String name,  DateTime departAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? placeId,  String name,  LatLng? location,  DateTime departAt)  $default,) {final _that = this;
 switch (_that) {
 case _ItineraryStart():
-return $default(_that.placeId,_that.name,_that.departAt);case _:
+return $default(_that.placeId,_that.name,_that.location,_that.departAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1669,10 +1684,10 @@ return $default(_that.placeId,_that.name,_that.departAt);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String placeId,  String name,  DateTime departAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? placeId,  String name,  LatLng? location,  DateTime departAt)?  $default,) {final _that = this;
 switch (_that) {
 case _ItineraryStart() when $default != null:
-return $default(_that.placeId,_that.name,_that.departAt);case _:
+return $default(_that.placeId,_that.name,_that.location,_that.departAt);case _:
   return null;
 
 }
@@ -1684,11 +1699,12 @@ return $default(_that.placeId,_that.name,_that.departAt);case _:
 @JsonSerializable()
 
 class _ItineraryStart implements ItineraryStart {
-  const _ItineraryStart({required this.placeId, required this.name, required this.departAt});
+  const _ItineraryStart({this.placeId, required this.name, this.location, required this.departAt});
   factory _ItineraryStart.fromJson(Map<String, dynamic> json) => _$ItineraryStartFromJson(json);
 
-@override final  String placeId;
+@override final  String? placeId;
 @override final  String name;
+@override final  LatLng? location;
 @override final  DateTime departAt;
 
 /// Create a copy of ItineraryStart
@@ -1704,18 +1720,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryStart&&(identical(other.placeId, placeId) || other.placeId == placeId)&&(identical(other.name, name) || other.name == name)&&(identical(other.departAt, departAt) || other.departAt == departAt));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryStart&&(identical(other.placeId, placeId) || other.placeId == placeId)&&(identical(other.name, name) || other.name == name)&&(identical(other.location, location) || other.location == location)&&(identical(other.departAt, departAt) || other.departAt == departAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,placeId,name,departAt);
+    return Object.hash(runtimeType,placeId,name,location,departAt);
 }
 
 @override
 String toString() {
-    return 'ItineraryStart(placeId: $placeId, name: $name, departAt: $departAt)';
+    return 'ItineraryStart(placeId: $placeId, name: $name, location: $location, departAt: $departAt)';
 }
 
 
@@ -1726,11 +1742,11 @@ abstract mixin class _$ItineraryStartCopyWith<$Res> implements $ItineraryStartCo
   factory _$ItineraryStartCopyWith(_ItineraryStart value, $Res Function(_ItineraryStart) _then) = __$ItineraryStartCopyWithImpl;
 @override @useResult
 $Res call({
- String placeId, String name, DateTime departAt
+ String? placeId, String name, LatLng? location, DateTime departAt
 });
 
 
-
+@override $LatLngCopyWith<$Res>? get location;
 
 }
 /// @nodoc
@@ -1743,16 +1759,339 @@ class __$ItineraryStartCopyWithImpl<$Res>
 
 /// Create a copy of ItineraryStart
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? placeId = null,Object? name = null,Object? departAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? placeId = freezed,Object? name = null,Object? location = freezed,Object? departAt = null,}) {
   return _then(_ItineraryStart(
-placeId: null == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
-as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
-as String,departAt: null == departAt ? _self.departAt : departAt // ignore: cast_nullable_to_non_nullable
+placeId: freezed == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
+as String?,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
+as LatLng?,departAt: null == departAt ? _self.departAt : departAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
   ));
 }
 
+/// Create a copy of ItineraryStart
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LatLngCopyWith<$Res>? get location {
+    if (_self.location == null) {
+    return null;
+  }
 
+  return $LatLngCopyWith<$Res>(_self.location!, (value) {
+    return _then(_self.copyWith(location: value));
+  });
+}
+}
+
+
+/// @nodoc
+mixin _$ItineraryEnd {
+
+ String? get placeId; String get name; LatLng? get location;/// 着きたい時刻（HH:mm）
+ String get arriveBy;/// 着く予定の時刻
+ DateTime get arriveAt;
+/// Create a copy of ItineraryEnd
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ItineraryEndCopyWith<ItineraryEnd> get copyWith => _$ItineraryEndCopyWithImpl<ItineraryEnd>(this as ItineraryEnd, _$identity);
+
+  /// Serializes this ItineraryEnd to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  final _this = this as ItineraryEnd;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryEnd&&(identical(other.placeId, _this.placeId) || other.placeId == _this.placeId)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.location, _this.location) || other.location == _this.location)&&(identical(other.arriveBy, _this.arriveBy) || other.arriveBy == _this.arriveBy)&&(identical(other.arriveAt, _this.arriveAt) || other.arriveAt == _this.arriveAt));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+  final _this = this as ItineraryEnd;
+  return Object.hash(runtimeType,_this.placeId,_this.name,_this.location,_this.arriveBy,_this.arriveAt);
+}
+
+@override
+String toString() {
+  final _this = this as ItineraryEnd;
+  return 'ItineraryEnd(placeId: ${_this.placeId}, name: ${_this.name}, location: ${_this.location}, arriveBy: ${_this.arriveBy}, arriveAt: ${_this.arriveAt})';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ItineraryEndCopyWith<$Res>  {
+  factory $ItineraryEndCopyWith(ItineraryEnd value, $Res Function(ItineraryEnd) _then) = _$ItineraryEndCopyWithImpl;
+@useResult
+$Res call({
+ String? placeId, String name, LatLng? location, String arriveBy, DateTime arriveAt
+});
+
+
+$LatLngCopyWith<$Res>? get location;
+
+}
+/// @nodoc
+class _$ItineraryEndCopyWithImpl<$Res>
+    implements $ItineraryEndCopyWith<$Res> {
+  _$ItineraryEndCopyWithImpl(this._self, this._then);
+
+  final ItineraryEnd _self;
+  final $Res Function(ItineraryEnd) _then;
+
+/// Create a copy of ItineraryEnd
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? placeId = freezed,Object? name = null,Object? location = freezed,Object? arriveBy = null,Object? arriveAt = null,}) {
+  return _then(ItineraryEnd(
+placeId: freezed == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
+as String?,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
+as LatLng?,arriveBy: null == arriveBy ? _self.arriveBy : arriveBy // ignore: cast_nullable_to_non_nullable
+as String,arriveAt: null == arriveAt ? _self.arriveAt : arriveAt // ignore: cast_nullable_to_non_nullable
+as DateTime,
+  ));
+}
+/// Create a copy of ItineraryEnd
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LatLngCopyWith<$Res>? get location {
+    if (_self.location == null) {
+    return null;
+  }
+
+  return $LatLngCopyWith<$Res>(_self.location!, (value) {
+    return _then(_self.copyWith(location: value));
+  });
+}
+}
+
+
+/// Adds pattern-matching-related methods to [ItineraryEnd].
+extension ItineraryEndPatterns on ItineraryEnd {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _ItineraryEnd value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _ItineraryEnd() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _ItineraryEnd value)  $default,){
+final _that = this;
+switch (_that) {
+case _ItineraryEnd():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _ItineraryEnd value)?  $default,){
+final _that = this;
+switch (_that) {
+case _ItineraryEnd() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? placeId,  String name,  LatLng? location,  String arriveBy,  DateTime arriveAt)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _ItineraryEnd() when $default != null:
+return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arriveAt);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? placeId,  String name,  LatLng? location,  String arriveBy,  DateTime arriveAt)  $default,) {final _that = this;
+switch (_that) {
+case _ItineraryEnd():
+return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arriveAt);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? placeId,  String name,  LatLng? location,  String arriveBy,  DateTime arriveAt)?  $default,) {final _that = this;
+switch (_that) {
+case _ItineraryEnd() when $default != null:
+return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arriveAt);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _ItineraryEnd implements ItineraryEnd {
+  const _ItineraryEnd({this.placeId, required this.name, this.location, required this.arriveBy, required this.arriveAt});
+  factory _ItineraryEnd.fromJson(Map<String, dynamic> json) => _$ItineraryEndFromJson(json);
+
+@override final  String? placeId;
+@override final  String name;
+@override final  LatLng? location;
+/// 着きたい時刻（HH:mm）
+@override final  String arriveBy;
+/// 着く予定の時刻
+@override final  DateTime arriveAt;
+
+/// Create a copy of ItineraryEnd
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$ItineraryEndCopyWith<_ItineraryEnd> get copyWith => __$ItineraryEndCopyWithImpl<_ItineraryEnd>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$ItineraryEndToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryEnd&&(identical(other.placeId, placeId) || other.placeId == placeId)&&(identical(other.name, name) || other.name == name)&&(identical(other.location, location) || other.location == location)&&(identical(other.arriveBy, arriveBy) || other.arriveBy == arriveBy)&&(identical(other.arriveAt, arriveAt) || other.arriveAt == arriveAt));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+    return Object.hash(runtimeType,placeId,name,location,arriveBy,arriveAt);
+}
+
+@override
+String toString() {
+    return 'ItineraryEnd(placeId: $placeId, name: $name, location: $location, arriveBy: $arriveBy, arriveAt: $arriveAt)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$ItineraryEndCopyWith<$Res> implements $ItineraryEndCopyWith<$Res> {
+  factory _$ItineraryEndCopyWith(_ItineraryEnd value, $Res Function(_ItineraryEnd) _then) = __$ItineraryEndCopyWithImpl;
+@override @useResult
+$Res call({
+ String? placeId, String name, LatLng? location, String arriveBy, DateTime arriveAt
+});
+
+
+@override $LatLngCopyWith<$Res>? get location;
+
+}
+/// @nodoc
+class __$ItineraryEndCopyWithImpl<$Res>
+    implements _$ItineraryEndCopyWith<$Res> {
+  __$ItineraryEndCopyWithImpl(this._self, this._then);
+
+  final _ItineraryEnd _self;
+  final $Res Function(_ItineraryEnd) _then;
+
+/// Create a copy of ItineraryEnd
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? placeId = freezed,Object? name = null,Object? location = freezed,Object? arriveBy = null,Object? arriveAt = null,}) {
+  return _then(_ItineraryEnd(
+placeId: freezed == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
+as String?,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
+as LatLng?,arriveBy: null == arriveBy ? _self.arriveBy : arriveBy // ignore: cast_nullable_to_non_nullable
+as String,arriveAt: null == arriveAt ? _self.arriveAt : arriveAt // ignore: cast_nullable_to_non_nullable
+as DateTime,
+  ));
+}
+
+/// Create a copy of ItineraryEnd
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$LatLngCopyWith<$Res>? get location {
+    if (_self.location == null) {
+    return null;
+  }
+
+  return $LatLngCopyWith<$Res>(_self.location!, (value) {
+    return _then(_self.copyWith(location: value));
+  });
+}
 }
 
 
@@ -2036,8 +2375,7 @@ as String,
 mixin _$Itinerary {
 
  String get id; int get version; String get title;/// 旅行日（YYYY-MM-DD）
- String get date; ItineraryStart get start;/// 終わりたい時刻（HH:mm）
- String get endBy; List<Item> get items; List<Leg> get legs; Summary get summary; List<DroppedPlace> get dropped; DateTime? get expiresAt;
+ String get date; ItineraryStart get start; ItineraryEnd get end; List<Item> get items; List<Leg> get legs; Summary get summary; List<DroppedPlace> get dropped; DateTime? get expiresAt;
 /// Create a copy of Itinerary
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2051,20 +2389,20 @@ $ItineraryCopyWith<Itinerary> get copyWith => _$ItineraryCopyWithImpl<Itinerary>
 @override
 bool operator ==(Object other) {
   final _this = this as Itinerary;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Itinerary&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.version, _this.version) || other.version == _this.version)&&(identical(other.title, _this.title) || other.title == _this.title)&&(identical(other.date, _this.date) || other.date == _this.date)&&(identical(other.start, _this.start) || other.start == _this.start)&&(identical(other.endBy, _this.endBy) || other.endBy == _this.endBy)&&const DeepCollectionEquality().equals(other.items, _this.items)&&const DeepCollectionEquality().equals(other.legs, _this.legs)&&(identical(other.summary, _this.summary) || other.summary == _this.summary)&&const DeepCollectionEquality().equals(other.dropped, _this.dropped)&&(identical(other.expiresAt, _this.expiresAt) || other.expiresAt == _this.expiresAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Itinerary&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.version, _this.version) || other.version == _this.version)&&(identical(other.title, _this.title) || other.title == _this.title)&&(identical(other.date, _this.date) || other.date == _this.date)&&(identical(other.start, _this.start) || other.start == _this.start)&&(identical(other.end, _this.end) || other.end == _this.end)&&const DeepCollectionEquality().equals(other.items, _this.items)&&const DeepCollectionEquality().equals(other.legs, _this.legs)&&(identical(other.summary, _this.summary) || other.summary == _this.summary)&&const DeepCollectionEquality().equals(other.dropped, _this.dropped)&&(identical(other.expiresAt, _this.expiresAt) || other.expiresAt == _this.expiresAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as Itinerary;
-  return Object.hash(runtimeType,_this.id,_this.version,_this.title,_this.date,_this.start,_this.endBy,const DeepCollectionEquality().hash(_this.items),const DeepCollectionEquality().hash(_this.legs),_this.summary,const DeepCollectionEquality().hash(_this.dropped),_this.expiresAt);
+  return Object.hash(runtimeType,_this.id,_this.version,_this.title,_this.date,_this.start,_this.end,const DeepCollectionEquality().hash(_this.items),const DeepCollectionEquality().hash(_this.legs),_this.summary,const DeepCollectionEquality().hash(_this.dropped),_this.expiresAt);
 }
 
 @override
 String toString() {
   final _this = this as Itinerary;
-  return 'Itinerary(id: ${_this.id}, version: ${_this.version}, title: ${_this.title}, date: ${_this.date}, start: ${_this.start}, endBy: ${_this.endBy}, items: ${_this.items}, legs: ${_this.legs}, summary: ${_this.summary}, dropped: ${_this.dropped}, expiresAt: ${_this.expiresAt})';
+  return 'Itinerary(id: ${_this.id}, version: ${_this.version}, title: ${_this.title}, date: ${_this.date}, start: ${_this.start}, end: ${_this.end}, items: ${_this.items}, legs: ${_this.legs}, summary: ${_this.summary}, dropped: ${_this.dropped}, expiresAt: ${_this.expiresAt})';
 }
 
 
@@ -2075,11 +2413,11 @@ abstract mixin class $ItineraryCopyWith<$Res>  {
   factory $ItineraryCopyWith(Itinerary value, $Res Function(Itinerary) _then) = _$ItineraryCopyWithImpl;
 @useResult
 $Res call({
- String id, int version, String title, String date, ItineraryStart start, String endBy, List<Item> items, List<Leg> legs, Summary summary, List<DroppedPlace> dropped, DateTime? expiresAt
+ String id, int version, String title, String date, ItineraryStart start, ItineraryEnd end, List<Item> items, List<Leg> legs, Summary summary, List<DroppedPlace> dropped, DateTime? expiresAt
 });
 
 
-$ItineraryStartCopyWith<$Res> get start;$SummaryCopyWith<$Res> get summary;
+$ItineraryStartCopyWith<$Res> get start;$ItineraryEndCopyWith<$Res> get end;$SummaryCopyWith<$Res> get summary;
 
 }
 /// @nodoc
@@ -2092,15 +2430,15 @@ class _$ItineraryCopyWithImpl<$Res>
 
 /// Create a copy of Itinerary
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? version = null,Object? title = null,Object? date = null,Object? start = null,Object? endBy = null,Object? items = null,Object? legs = null,Object? summary = null,Object? dropped = null,Object? expiresAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? version = null,Object? title = null,Object? date = null,Object? start = null,Object? end = null,Object? items = null,Object? legs = null,Object? summary = null,Object? dropped = null,Object? expiresAt = freezed,}) {
   return _then(Itinerary(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,version: null == version ? _self.version : version // ignore: cast_nullable_to_non_nullable
 as int,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
 as String,date: null == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
 as String,start: null == start ? _self.start : start // ignore: cast_nullable_to_non_nullable
-as ItineraryStart,endBy: null == endBy ? _self.endBy : endBy // ignore: cast_nullable_to_non_nullable
-as String,items: null == items ? _self.items : items // ignore: cast_nullable_to_non_nullable
+as ItineraryStart,end: null == end ? _self.end : end // ignore: cast_nullable_to_non_nullable
+as ItineraryEnd,items: null == items ? _self.items : items // ignore: cast_nullable_to_non_nullable
 as List<Item>,legs: null == legs ? _self.legs : legs // ignore: cast_nullable_to_non_nullable
 as List<Leg>,summary: null == summary ? _self.summary : summary // ignore: cast_nullable_to_non_nullable
 as Summary,dropped: null == dropped ? _self.dropped : dropped // ignore: cast_nullable_to_non_nullable
@@ -2116,6 +2454,15 @@ $ItineraryStartCopyWith<$Res> get start {
   
   return $ItineraryStartCopyWith<$Res>(_self.start, (value) {
     return _then(_self.copyWith(start: value));
+  });
+}/// Create a copy of Itinerary
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ItineraryEndCopyWith<$Res> get end {
+  
+  return $ItineraryEndCopyWith<$Res>(_self.end, (value) {
+    return _then(_self.copyWith(end: value));
   });
 }/// Create a copy of Itinerary
 /// with the given fields replaced by the non-null parameter values.
@@ -2208,10 +2555,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  int version,  String title,  String date,  ItineraryStart start,  String endBy,  List<Item> items,  List<Leg> legs,  Summary summary,  List<DroppedPlace> dropped,  DateTime? expiresAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  int version,  String title,  String date,  ItineraryStart start,  ItineraryEnd end,  List<Item> items,  List<Leg> legs,  Summary summary,  List<DroppedPlace> dropped,  DateTime? expiresAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Itinerary() when $default != null:
-return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.endBy,_that.items,_that.legs,_that.summary,_that.dropped,_that.expiresAt);case _:
+return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.end,_that.items,_that.legs,_that.summary,_that.dropped,_that.expiresAt);case _:
   return orElse();
 
 }
@@ -2229,10 +2576,10 @@ return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  int version,  String title,  String date,  ItineraryStart start,  String endBy,  List<Item> items,  List<Leg> legs,  Summary summary,  List<DroppedPlace> dropped,  DateTime? expiresAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  int version,  String title,  String date,  ItineraryStart start,  ItineraryEnd end,  List<Item> items,  List<Leg> legs,  Summary summary,  List<DroppedPlace> dropped,  DateTime? expiresAt)  $default,) {final _that = this;
 switch (_that) {
 case _Itinerary():
-return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.endBy,_that.items,_that.legs,_that.summary,_that.dropped,_that.expiresAt);case _:
+return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.end,_that.items,_that.legs,_that.summary,_that.dropped,_that.expiresAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -2249,10 +2596,10 @@ return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  int version,  String title,  String date,  ItineraryStart start,  String endBy,  List<Item> items,  List<Leg> legs,  Summary summary,  List<DroppedPlace> dropped,  DateTime? expiresAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  int version,  String title,  String date,  ItineraryStart start,  ItineraryEnd end,  List<Item> items,  List<Leg> legs,  Summary summary,  List<DroppedPlace> dropped,  DateTime? expiresAt)?  $default,) {final _that = this;
 switch (_that) {
 case _Itinerary() when $default != null:
-return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.endBy,_that.items,_that.legs,_that.summary,_that.dropped,_that.expiresAt);case _:
+return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.end,_that.items,_that.legs,_that.summary,_that.dropped,_that.expiresAt);case _:
   return null;
 
 }
@@ -2264,7 +2611,7 @@ return $default(_that.id,_that.version,_that.title,_that.date,_that.start,_that.
 @JsonSerializable()
 
 class _Itinerary implements Itinerary {
-  const _Itinerary({required this.id, required this.version, required this.title, required this.date, required this.start, required this.endBy,  List<Item> items = const <Item>[],  List<Leg> legs = const <Leg>[], required this.summary,  List<DroppedPlace> dropped = const <DroppedPlace>[], this.expiresAt}): _items = items,_legs = legs,_dropped = dropped;
+  const _Itinerary({required this.id, required this.version, required this.title, required this.date, required this.start, required this.end,  List<Item> items = const <Item>[],  List<Leg> legs = const <Leg>[], required this.summary,  List<DroppedPlace> dropped = const <DroppedPlace>[], this.expiresAt}): _items = items,_legs = legs,_dropped = dropped;
   factory _Itinerary.fromJson(Map<String, dynamic> json) => _$ItineraryFromJson(json);
 
 @override final  String id;
@@ -2273,8 +2620,7 @@ class _Itinerary implements Itinerary {
 /// 旅行日（YYYY-MM-DD）
 @override final  String date;
 @override final  ItineraryStart start;
-/// 終わりたい時刻（HH:mm）
-@override final  String endBy;
+@override final  ItineraryEnd end;
  final  List<Item> _items;
 @override@JsonKey() List<Item> get items {
   if (_items is EqualUnmodifiableListView) return _items;
@@ -2312,18 +2658,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _Itinerary&&(identical(other.id, id) || other.id == id)&&(identical(other.version, version) || other.version == version)&&(identical(other.title, title) || other.title == title)&&(identical(other.date, date) || other.date == date)&&(identical(other.start, start) || other.start == start)&&(identical(other.endBy, endBy) || other.endBy == endBy)&&const DeepCollectionEquality().equals(other.items, _items)&&const DeepCollectionEquality().equals(other.legs, _legs)&&(identical(other.summary, summary) || other.summary == summary)&&const DeepCollectionEquality().equals(other.dropped, _dropped)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _Itinerary&&(identical(other.id, id) || other.id == id)&&(identical(other.version, version) || other.version == version)&&(identical(other.title, title) || other.title == title)&&(identical(other.date, date) || other.date == date)&&(identical(other.start, start) || other.start == start)&&(identical(other.end, end) || other.end == end)&&const DeepCollectionEquality().equals(other.items, _items)&&const DeepCollectionEquality().equals(other.legs, _legs)&&(identical(other.summary, summary) || other.summary == summary)&&const DeepCollectionEquality().equals(other.dropped, _dropped)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,id,version,title,date,start,endBy,const DeepCollectionEquality().hash(_items),const DeepCollectionEquality().hash(_legs),summary,const DeepCollectionEquality().hash(_dropped),expiresAt);
+    return Object.hash(runtimeType,id,version,title,date,start,end,const DeepCollectionEquality().hash(_items),const DeepCollectionEquality().hash(_legs),summary,const DeepCollectionEquality().hash(_dropped),expiresAt);
 }
 
 @override
 String toString() {
-    return 'Itinerary(id: $id, version: $version, title: $title, date: $date, start: $start, endBy: $endBy, items: $items, legs: $legs, summary: $summary, dropped: $dropped, expiresAt: $expiresAt)';
+    return 'Itinerary(id: $id, version: $version, title: $title, date: $date, start: $start, end: $end, items: $items, legs: $legs, summary: $summary, dropped: $dropped, expiresAt: $expiresAt)';
 }
 
 
@@ -2334,11 +2680,11 @@ abstract mixin class _$ItineraryCopyWith<$Res> implements $ItineraryCopyWith<$Re
   factory _$ItineraryCopyWith(_Itinerary value, $Res Function(_Itinerary) _then) = __$ItineraryCopyWithImpl;
 @override @useResult
 $Res call({
- String id, int version, String title, String date, ItineraryStart start, String endBy, List<Item> items, List<Leg> legs, Summary summary, List<DroppedPlace> dropped, DateTime? expiresAt
+ String id, int version, String title, String date, ItineraryStart start, ItineraryEnd end, List<Item> items, List<Leg> legs, Summary summary, List<DroppedPlace> dropped, DateTime? expiresAt
 });
 
 
-@override $ItineraryStartCopyWith<$Res> get start;@override $SummaryCopyWith<$Res> get summary;
+@override $ItineraryStartCopyWith<$Res> get start;@override $ItineraryEndCopyWith<$Res> get end;@override $SummaryCopyWith<$Res> get summary;
 
 }
 /// @nodoc
@@ -2351,15 +2697,15 @@ class __$ItineraryCopyWithImpl<$Res>
 
 /// Create a copy of Itinerary
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? version = null,Object? title = null,Object? date = null,Object? start = null,Object? endBy = null,Object? items = null,Object? legs = null,Object? summary = null,Object? dropped = null,Object? expiresAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? version = null,Object? title = null,Object? date = null,Object? start = null,Object? end = null,Object? items = null,Object? legs = null,Object? summary = null,Object? dropped = null,Object? expiresAt = freezed,}) {
   return _then(_Itinerary(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,version: null == version ? _self.version : version // ignore: cast_nullable_to_non_nullable
 as int,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
 as String,date: null == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
 as String,start: null == start ? _self.start : start // ignore: cast_nullable_to_non_nullable
-as ItineraryStart,endBy: null == endBy ? _self.endBy : endBy // ignore: cast_nullable_to_non_nullable
-as String,items: null == items ? _self._items : items // ignore: cast_nullable_to_non_nullable
+as ItineraryStart,end: null == end ? _self.end : end // ignore: cast_nullable_to_non_nullable
+as ItineraryEnd,items: null == items ? _self._items : items // ignore: cast_nullable_to_non_nullable
 as List<Item>,legs: null == legs ? _self._legs : legs // ignore: cast_nullable_to_non_nullable
 as List<Leg>,summary: null == summary ? _self.summary : summary // ignore: cast_nullable_to_non_nullable
 as Summary,dropped: null == dropped ? _self._dropped : dropped // ignore: cast_nullable_to_non_nullable
@@ -2381,6 +2727,15 @@ $ItineraryStartCopyWith<$Res> get start {
 /// with the given fields replaced by the non-null parameter values.
 @override
 @pragma('vm:prefer-inline')
+$ItineraryEndCopyWith<$Res> get end {
+  
+  return $ItineraryEndCopyWith<$Res>(_self.end, (value) {
+    return _then(_self.copyWith(end: value));
+  });
+}/// Create a copy of Itinerary
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
 $SummaryCopyWith<$Res> get summary {
   
   return $SummaryCopyWith<$Res>(_self.summary, (value) {
@@ -2391,9 +2746,558 @@ $SummaryCopyWith<$Res> get summary {
 
 
 /// @nodoc
+mixin _$ItineraryListStart {
+
+ String get name; DateTime get departAt;
+/// Create a copy of ItineraryListStart
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ItineraryListStartCopyWith<ItineraryListStart> get copyWith => _$ItineraryListStartCopyWithImpl<ItineraryListStart>(this as ItineraryListStart, _$identity);
+
+  /// Serializes this ItineraryListStart to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  final _this = this as ItineraryListStart;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryListStart&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.departAt, _this.departAt) || other.departAt == _this.departAt));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+  final _this = this as ItineraryListStart;
+  return Object.hash(runtimeType,_this.name,_this.departAt);
+}
+
+@override
+String toString() {
+  final _this = this as ItineraryListStart;
+  return 'ItineraryListStart(name: ${_this.name}, departAt: ${_this.departAt})';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ItineraryListStartCopyWith<$Res>  {
+  factory $ItineraryListStartCopyWith(ItineraryListStart value, $Res Function(ItineraryListStart) _then) = _$ItineraryListStartCopyWithImpl;
+@useResult
+$Res call({
+ String name, DateTime departAt
+});
+
+
+
+
+}
+/// @nodoc
+class _$ItineraryListStartCopyWithImpl<$Res>
+    implements $ItineraryListStartCopyWith<$Res> {
+  _$ItineraryListStartCopyWithImpl(this._self, this._then);
+
+  final ItineraryListStart _self;
+  final $Res Function(ItineraryListStart) _then;
+
+/// Create a copy of ItineraryListStart
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? name = null,Object? departAt = null,}) {
+  return _then(ItineraryListStart(
+name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,departAt: null == departAt ? _self.departAt : departAt // ignore: cast_nullable_to_non_nullable
+as DateTime,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [ItineraryListStart].
+extension ItineraryListStartPatterns on ItineraryListStart {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _ItineraryListStart value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _ItineraryListStart() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _ItineraryListStart value)  $default,){
+final _that = this;
+switch (_that) {
+case _ItineraryListStart():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _ItineraryListStart value)?  $default,){
+final _that = this;
+switch (_that) {
+case _ItineraryListStart() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String name,  DateTime departAt)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _ItineraryListStart() when $default != null:
+return $default(_that.name,_that.departAt);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String name,  DateTime departAt)  $default,) {final _that = this;
+switch (_that) {
+case _ItineraryListStart():
+return $default(_that.name,_that.departAt);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String name,  DateTime departAt)?  $default,) {final _that = this;
+switch (_that) {
+case _ItineraryListStart() when $default != null:
+return $default(_that.name,_that.departAt);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _ItineraryListStart implements ItineraryListStart {
+  const _ItineraryListStart({required this.name, required this.departAt});
+  factory _ItineraryListStart.fromJson(Map<String, dynamic> json) => _$ItineraryListStartFromJson(json);
+
+@override final  String name;
+@override final  DateTime departAt;
+
+/// Create a copy of ItineraryListStart
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$ItineraryListStartCopyWith<_ItineraryListStart> get copyWith => __$ItineraryListStartCopyWithImpl<_ItineraryListStart>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$ItineraryListStartToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryListStart&&(identical(other.name, name) || other.name == name)&&(identical(other.departAt, departAt) || other.departAt == departAt));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+    return Object.hash(runtimeType,name,departAt);
+}
+
+@override
+String toString() {
+    return 'ItineraryListStart(name: $name, departAt: $departAt)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$ItineraryListStartCopyWith<$Res> implements $ItineraryListStartCopyWith<$Res> {
+  factory _$ItineraryListStartCopyWith(_ItineraryListStart value, $Res Function(_ItineraryListStart) _then) = __$ItineraryListStartCopyWithImpl;
+@override @useResult
+$Res call({
+ String name, DateTime departAt
+});
+
+
+
+
+}
+/// @nodoc
+class __$ItineraryListStartCopyWithImpl<$Res>
+    implements _$ItineraryListStartCopyWith<$Res> {
+  __$ItineraryListStartCopyWithImpl(this._self, this._then);
+
+  final _ItineraryListStart _self;
+  final $Res Function(_ItineraryListStart) _then;
+
+/// Create a copy of ItineraryListStart
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? name = null,Object? departAt = null,}) {
+  return _then(_ItineraryListStart(
+name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,departAt: null == departAt ? _self.departAt : departAt // ignore: cast_nullable_to_non_nullable
+as DateTime,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
+mixin _$ItineraryListEnd {
+
+ String get name; DateTime get arriveAt;
+/// Create a copy of ItineraryListEnd
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ItineraryListEndCopyWith<ItineraryListEnd> get copyWith => _$ItineraryListEndCopyWithImpl<ItineraryListEnd>(this as ItineraryListEnd, _$identity);
+
+  /// Serializes this ItineraryListEnd to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  final _this = this as ItineraryListEnd;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryListEnd&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.arriveAt, _this.arriveAt) || other.arriveAt == _this.arriveAt));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+  final _this = this as ItineraryListEnd;
+  return Object.hash(runtimeType,_this.name,_this.arriveAt);
+}
+
+@override
+String toString() {
+  final _this = this as ItineraryListEnd;
+  return 'ItineraryListEnd(name: ${_this.name}, arriveAt: ${_this.arriveAt})';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ItineraryListEndCopyWith<$Res>  {
+  factory $ItineraryListEndCopyWith(ItineraryListEnd value, $Res Function(ItineraryListEnd) _then) = _$ItineraryListEndCopyWithImpl;
+@useResult
+$Res call({
+ String name, DateTime arriveAt
+});
+
+
+
+
+}
+/// @nodoc
+class _$ItineraryListEndCopyWithImpl<$Res>
+    implements $ItineraryListEndCopyWith<$Res> {
+  _$ItineraryListEndCopyWithImpl(this._self, this._then);
+
+  final ItineraryListEnd _self;
+  final $Res Function(ItineraryListEnd) _then;
+
+/// Create a copy of ItineraryListEnd
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? name = null,Object? arriveAt = null,}) {
+  return _then(ItineraryListEnd(
+name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,arriveAt: null == arriveAt ? _self.arriveAt : arriveAt // ignore: cast_nullable_to_non_nullable
+as DateTime,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [ItineraryListEnd].
+extension ItineraryListEndPatterns on ItineraryListEnd {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _ItineraryListEnd value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _ItineraryListEnd() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _ItineraryListEnd value)  $default,){
+final _that = this;
+switch (_that) {
+case _ItineraryListEnd():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _ItineraryListEnd value)?  $default,){
+final _that = this;
+switch (_that) {
+case _ItineraryListEnd() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String name,  DateTime arriveAt)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _ItineraryListEnd() when $default != null:
+return $default(_that.name,_that.arriveAt);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String name,  DateTime arriveAt)  $default,) {final _that = this;
+switch (_that) {
+case _ItineraryListEnd():
+return $default(_that.name,_that.arriveAt);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String name,  DateTime arriveAt)?  $default,) {final _that = this;
+switch (_that) {
+case _ItineraryListEnd() when $default != null:
+return $default(_that.name,_that.arriveAt);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _ItineraryListEnd implements ItineraryListEnd {
+  const _ItineraryListEnd({required this.name, required this.arriveAt});
+  factory _ItineraryListEnd.fromJson(Map<String, dynamic> json) => _$ItineraryListEndFromJson(json);
+
+@override final  String name;
+@override final  DateTime arriveAt;
+
+/// Create a copy of ItineraryListEnd
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$ItineraryListEndCopyWith<_ItineraryListEnd> get copyWith => __$ItineraryListEndCopyWithImpl<_ItineraryListEnd>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$ItineraryListEndToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryListEnd&&(identical(other.name, name) || other.name == name)&&(identical(other.arriveAt, arriveAt) || other.arriveAt == arriveAt));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+    return Object.hash(runtimeType,name,arriveAt);
+}
+
+@override
+String toString() {
+    return 'ItineraryListEnd(name: $name, arriveAt: $arriveAt)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$ItineraryListEndCopyWith<$Res> implements $ItineraryListEndCopyWith<$Res> {
+  factory _$ItineraryListEndCopyWith(_ItineraryListEnd value, $Res Function(_ItineraryListEnd) _then) = __$ItineraryListEndCopyWithImpl;
+@override @useResult
+$Res call({
+ String name, DateTime arriveAt
+});
+
+
+
+
+}
+/// @nodoc
+class __$ItineraryListEndCopyWithImpl<$Res>
+    implements _$ItineraryListEndCopyWith<$Res> {
+  __$ItineraryListEndCopyWithImpl(this._self, this._then);
+
+  final _ItineraryListEnd _self;
+  final $Res Function(_ItineraryListEnd) _then;
+
+/// Create a copy of ItineraryListEnd
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? name = null,Object? arriveAt = null,}) {
+  return _then(_ItineraryListEnd(
+name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,arriveAt: null == arriveAt ? _self.arriveAt : arriveAt // ignore: cast_nullable_to_non_nullable
+as DateTime,
+  ));
+}
+
+
+}
+
+
+/// @nodoc
 mixin _$ItineraryListEntry {
 
- String get id; String get title; String get date; DateTime get updatedAt;
+ String get id; String get title;/// 旅行日（YYYY-MM-DD）
+ String get date; ItineraryListStart get start; ItineraryListEnd get end; int get placeCount;/// 行き先の名前（先頭 3 件まで）
+ List<String> get placeNames; DateTime get updatedAt;/// 自動で消える日時（一覧の「終わった旅」に出す）
+ DateTime? get expiresAt;
 /// Create a copy of ItineraryListEntry
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -2407,20 +3311,20 @@ $ItineraryListEntryCopyWith<ItineraryListEntry> get copyWith => _$ItineraryListE
 @override
 bool operator ==(Object other) {
   final _this = this as ItineraryListEntry;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryListEntry&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.title, _this.title) || other.title == _this.title)&&(identical(other.date, _this.date) || other.date == _this.date)&&(identical(other.updatedAt, _this.updatedAt) || other.updatedAt == _this.updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryListEntry&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.title, _this.title) || other.title == _this.title)&&(identical(other.date, _this.date) || other.date == _this.date)&&(identical(other.start, _this.start) || other.start == _this.start)&&(identical(other.end, _this.end) || other.end == _this.end)&&(identical(other.placeCount, _this.placeCount) || other.placeCount == _this.placeCount)&&const DeepCollectionEquality().equals(other.placeNames, _this.placeNames)&&(identical(other.updatedAt, _this.updatedAt) || other.updatedAt == _this.updatedAt)&&(identical(other.expiresAt, _this.expiresAt) || other.expiresAt == _this.expiresAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as ItineraryListEntry;
-  return Object.hash(runtimeType,_this.id,_this.title,_this.date,_this.updatedAt);
+  return Object.hash(runtimeType,_this.id,_this.title,_this.date,_this.start,_this.end,_this.placeCount,const DeepCollectionEquality().hash(_this.placeNames),_this.updatedAt,_this.expiresAt);
 }
 
 @override
 String toString() {
   final _this = this as ItineraryListEntry;
-  return 'ItineraryListEntry(id: ${_this.id}, title: ${_this.title}, date: ${_this.date}, updatedAt: ${_this.updatedAt})';
+  return 'ItineraryListEntry(id: ${_this.id}, title: ${_this.title}, date: ${_this.date}, start: ${_this.start}, end: ${_this.end}, placeCount: ${_this.placeCount}, placeNames: ${_this.placeNames}, updatedAt: ${_this.updatedAt}, expiresAt: ${_this.expiresAt})';
 }
 
 
@@ -2431,11 +3335,11 @@ abstract mixin class $ItineraryListEntryCopyWith<$Res>  {
   factory $ItineraryListEntryCopyWith(ItineraryListEntry value, $Res Function(ItineraryListEntry) _then) = _$ItineraryListEntryCopyWithImpl;
 @useResult
 $Res call({
- String id, String title, String date, DateTime updatedAt
+ String id, String title, String date, ItineraryListStart start, ItineraryListEnd end, int placeCount, List<String> placeNames, DateTime updatedAt, DateTime? expiresAt
 });
 
 
-
+$ItineraryListStartCopyWith<$Res> get start;$ItineraryListEndCopyWith<$Res> get end;
 
 }
 /// @nodoc
@@ -2448,16 +3352,39 @@ class _$ItineraryListEntryCopyWithImpl<$Res>
 
 /// Create a copy of ItineraryListEntry
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? title = null,Object? date = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? title = null,Object? date = null,Object? start = null,Object? end = null,Object? placeCount = null,Object? placeNames = null,Object? updatedAt = null,Object? expiresAt = freezed,}) {
   return _then(ItineraryListEntry(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
 as String,date: null == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
-as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as DateTime,
+as String,start: null == start ? _self.start : start // ignore: cast_nullable_to_non_nullable
+as ItineraryListStart,end: null == end ? _self.end : end // ignore: cast_nullable_to_non_nullable
+as ItineraryListEnd,placeCount: null == placeCount ? _self.placeCount : placeCount // ignore: cast_nullable_to_non_nullable
+as int,placeNames: null == placeNames ? _self.placeNames : placeNames // ignore: cast_nullable_to_non_nullable
+as List<String>,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
+as DateTime,expiresAt: freezed == expiresAt ? _self.expiresAt : expiresAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,
   ));
 }
-
+/// Create a copy of ItineraryListEntry
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ItineraryListStartCopyWith<$Res> get start {
+  
+  return $ItineraryListStartCopyWith<$Res>(_self.start, (value) {
+    return _then(_self.copyWith(start: value));
+  });
+}/// Create a copy of ItineraryListEntry
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ItineraryListEndCopyWith<$Res> get end {
+  
+  return $ItineraryListEndCopyWith<$Res>(_self.end, (value) {
+    return _then(_self.copyWith(end: value));
+  });
+}
 }
 
 
@@ -2539,10 +3466,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String title,  String date,  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String title,  String date,  ItineraryListStart start,  ItineraryListEnd end,  int placeCount,  List<String> placeNames,  DateTime updatedAt,  DateTime? expiresAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ItineraryListEntry() when $default != null:
-return $default(_that.id,_that.title,_that.date,_that.updatedAt);case _:
+return $default(_that.id,_that.title,_that.date,_that.start,_that.end,_that.placeCount,_that.placeNames,_that.updatedAt,_that.expiresAt);case _:
   return orElse();
 
 }
@@ -2560,10 +3487,10 @@ return $default(_that.id,_that.title,_that.date,_that.updatedAt);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String title,  String date,  DateTime updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String title,  String date,  ItineraryListStart start,  ItineraryListEnd end,  int placeCount,  List<String> placeNames,  DateTime updatedAt,  DateTime? expiresAt)  $default,) {final _that = this;
 switch (_that) {
 case _ItineraryListEntry():
-return $default(_that.id,_that.title,_that.date,_that.updatedAt);case _:
+return $default(_that.id,_that.title,_that.date,_that.start,_that.end,_that.placeCount,_that.placeNames,_that.updatedAt,_that.expiresAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -2580,10 +3507,10 @@ return $default(_that.id,_that.title,_that.date,_that.updatedAt);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String title,  String date,  DateTime updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String title,  String date,  ItineraryListStart start,  ItineraryListEnd end,  int placeCount,  List<String> placeNames,  DateTime updatedAt,  DateTime? expiresAt)?  $default,) {final _that = this;
 switch (_that) {
 case _ItineraryListEntry() when $default != null:
-return $default(_that.id,_that.title,_that.date,_that.updatedAt);case _:
+return $default(_that.id,_that.title,_that.date,_that.start,_that.end,_that.placeCount,_that.placeNames,_that.updatedAt,_that.expiresAt);case _:
   return null;
 
 }
@@ -2595,13 +3522,28 @@ return $default(_that.id,_that.title,_that.date,_that.updatedAt);case _:
 @JsonSerializable()
 
 class _ItineraryListEntry implements ItineraryListEntry {
-  const _ItineraryListEntry({required this.id, required this.title, required this.date, required this.updatedAt});
+  const _ItineraryListEntry({required this.id, required this.title, required this.date, required this.start, required this.end, this.placeCount = 0,  List<String> placeNames = const <String>[], required this.updatedAt, this.expiresAt}): _placeNames = placeNames;
   factory _ItineraryListEntry.fromJson(Map<String, dynamic> json) => _$ItineraryListEntryFromJson(json);
 
 @override final  String id;
 @override final  String title;
+/// 旅行日（YYYY-MM-DD）
 @override final  String date;
+@override final  ItineraryListStart start;
+@override final  ItineraryListEnd end;
+@override@JsonKey() final  int placeCount;
+/// 行き先の名前（先頭 3 件まで）
+ final  List<String> _placeNames;
+/// 行き先の名前（先頭 3 件まで）
+@override@JsonKey() List<String> get placeNames {
+  if (_placeNames is EqualUnmodifiableListView) return _placeNames;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_placeNames);
+}
+
 @override final  DateTime updatedAt;
+/// 自動で消える日時（一覧の「終わった旅」に出す）
+@override final  DateTime? expiresAt;
 
 /// Create a copy of ItineraryListEntry
 /// with the given fields replaced by the non-null parameter values.
@@ -2616,18 +3558,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryListEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.date, date) || other.date == date)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryListEntry&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.date, date) || other.date == date)&&(identical(other.start, start) || other.start == start)&&(identical(other.end, end) || other.end == end)&&(identical(other.placeCount, placeCount) || other.placeCount == placeCount)&&const DeepCollectionEquality().equals(other.placeNames, _placeNames)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.expiresAt, expiresAt) || other.expiresAt == expiresAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,id,title,date,updatedAt);
+    return Object.hash(runtimeType,id,title,date,start,end,placeCount,const DeepCollectionEquality().hash(_placeNames),updatedAt,expiresAt);
 }
 
 @override
 String toString() {
-    return 'ItineraryListEntry(id: $id, title: $title, date: $date, updatedAt: $updatedAt)';
+    return 'ItineraryListEntry(id: $id, title: $title, date: $date, start: $start, end: $end, placeCount: $placeCount, placeNames: $placeNames, updatedAt: $updatedAt, expiresAt: $expiresAt)';
 }
 
 
@@ -2638,11 +3580,11 @@ abstract mixin class _$ItineraryListEntryCopyWith<$Res> implements $ItineraryLis
   factory _$ItineraryListEntryCopyWith(_ItineraryListEntry value, $Res Function(_ItineraryListEntry) _then) = __$ItineraryListEntryCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String title, String date, DateTime updatedAt
+ String id, String title, String date, ItineraryListStart start, ItineraryListEnd end, int placeCount, List<String> placeNames, DateTime updatedAt, DateTime? expiresAt
 });
 
 
-
+@override $ItineraryListStartCopyWith<$Res> get start;@override $ItineraryListEndCopyWith<$Res> get end;
 
 }
 /// @nodoc
@@ -2655,13 +3597,315 @@ class __$ItineraryListEntryCopyWithImpl<$Res>
 
 /// Create a copy of ItineraryListEntry
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? title = null,Object? date = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? title = null,Object? date = null,Object? start = null,Object? end = null,Object? placeCount = null,Object? placeNames = null,Object? updatedAt = null,Object? expiresAt = freezed,}) {
   return _then(_ItineraryListEntry(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
 as String,date: null == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
-as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as DateTime,
+as String,start: null == start ? _self.start : start // ignore: cast_nullable_to_non_nullable
+as ItineraryListStart,end: null == end ? _self.end : end // ignore: cast_nullable_to_non_nullable
+as ItineraryListEnd,placeCount: null == placeCount ? _self.placeCount : placeCount // ignore: cast_nullable_to_non_nullable
+as int,placeNames: null == placeNames ? _self._placeNames : placeNames // ignore: cast_nullable_to_non_nullable
+as List<String>,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
+as DateTime,expiresAt: freezed == expiresAt ? _self.expiresAt : expiresAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,
+  ));
+}
+
+/// Create a copy of ItineraryListEntry
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ItineraryListStartCopyWith<$Res> get start {
+  
+  return $ItineraryListStartCopyWith<$Res>(_self.start, (value) {
+    return _then(_self.copyWith(start: value));
+  });
+}/// Create a copy of ItineraryListEntry
+/// with the given fields replaced by the non-null parameter values.
+@override
+@pragma('vm:prefer-inline')
+$ItineraryListEndCopyWith<$Res> get end {
+  
+  return $ItineraryListEndCopyWith<$Res>(_self.end, (value) {
+    return _then(_self.copyWith(end: value));
+  });
+}
+}
+
+
+/// @nodoc
+mixin _$ItineraryPage {
+
+ List<ItineraryListEntry> get itineraries; String? get nextCursor;
+/// Create a copy of ItineraryPage
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ItineraryPageCopyWith<ItineraryPage> get copyWith => _$ItineraryPageCopyWithImpl<ItineraryPage>(this as ItineraryPage, _$identity);
+
+  /// Serializes this ItineraryPage to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  final _this = this as ItineraryPage;
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryPage&&const DeepCollectionEquality().equals(other.itineraries, _this.itineraries)&&(identical(other.nextCursor, _this.nextCursor) || other.nextCursor == _this.nextCursor));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+  final _this = this as ItineraryPage;
+  return Object.hash(runtimeType,const DeepCollectionEquality().hash(_this.itineraries),_this.nextCursor);
+}
+
+@override
+String toString() {
+  final _this = this as ItineraryPage;
+  return 'ItineraryPage(itineraries: ${_this.itineraries}, nextCursor: ${_this.nextCursor})';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ItineraryPageCopyWith<$Res>  {
+  factory $ItineraryPageCopyWith(ItineraryPage value, $Res Function(ItineraryPage) _then) = _$ItineraryPageCopyWithImpl;
+@useResult
+$Res call({
+ List<ItineraryListEntry> itineraries, String? nextCursor
+});
+
+
+
+
+}
+/// @nodoc
+class _$ItineraryPageCopyWithImpl<$Res>
+    implements $ItineraryPageCopyWith<$Res> {
+  _$ItineraryPageCopyWithImpl(this._self, this._then);
+
+  final ItineraryPage _self;
+  final $Res Function(ItineraryPage) _then;
+
+/// Create a copy of ItineraryPage
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? itineraries = null,Object? nextCursor = freezed,}) {
+  return _then(ItineraryPage(
+itineraries: null == itineraries ? _self.itineraries : itineraries // ignore: cast_nullable_to_non_nullable
+as List<ItineraryListEntry>,nextCursor: freezed == nextCursor ? _self.nextCursor : nextCursor // ignore: cast_nullable_to_non_nullable
+as String?,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [ItineraryPage].
+extension ItineraryPagePatterns on ItineraryPage {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _ItineraryPage value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _ItineraryPage() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _ItineraryPage value)  $default,){
+final _that = this;
+switch (_that) {
+case _ItineraryPage():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _ItineraryPage value)?  $default,){
+final _that = this;
+switch (_that) {
+case _ItineraryPage() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<ItineraryListEntry> itineraries,  String? nextCursor)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _ItineraryPage() when $default != null:
+return $default(_that.itineraries,_that.nextCursor);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<ItineraryListEntry> itineraries,  String? nextCursor)  $default,) {final _that = this;
+switch (_that) {
+case _ItineraryPage():
+return $default(_that.itineraries,_that.nextCursor);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<ItineraryListEntry> itineraries,  String? nextCursor)?  $default,) {final _that = this;
+switch (_that) {
+case _ItineraryPage() when $default != null:
+return $default(_that.itineraries,_that.nextCursor);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _ItineraryPage implements ItineraryPage {
+  const _ItineraryPage({ List<ItineraryListEntry> itineraries = const <ItineraryListEntry>[], this.nextCursor}): _itineraries = itineraries;
+  factory _ItineraryPage.fromJson(Map<String, dynamic> json) => _$ItineraryPageFromJson(json);
+
+ final  List<ItineraryListEntry> _itineraries;
+@override@JsonKey() List<ItineraryListEntry> get itineraries {
+  if (_itineraries is EqualUnmodifiableListView) return _itineraries;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_itineraries);
+}
+
+@override final  String? nextCursor;
+
+/// Create a copy of ItineraryPage
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$ItineraryPageCopyWith<_ItineraryPage> get copyWith => __$ItineraryPageCopyWithImpl<_ItineraryPage>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$ItineraryPageToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryPage&&const DeepCollectionEquality().equals(other.itineraries, _itineraries)&&(identical(other.nextCursor, nextCursor) || other.nextCursor == nextCursor));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode {
+    return Object.hash(runtimeType,const DeepCollectionEquality().hash(_itineraries),nextCursor);
+}
+
+@override
+String toString() {
+    return 'ItineraryPage(itineraries: $itineraries, nextCursor: $nextCursor)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$ItineraryPageCopyWith<$Res> implements $ItineraryPageCopyWith<$Res> {
+  factory _$ItineraryPageCopyWith(_ItineraryPage value, $Res Function(_ItineraryPage) _then) = __$ItineraryPageCopyWithImpl;
+@override @useResult
+$Res call({
+ List<ItineraryListEntry> itineraries, String? nextCursor
+});
+
+
+
+
+}
+/// @nodoc
+class __$ItineraryPageCopyWithImpl<$Res>
+    implements _$ItineraryPageCopyWith<$Res> {
+  __$ItineraryPageCopyWithImpl(this._self, this._then);
+
+  final _ItineraryPage _self;
+  final $Res Function(_ItineraryPage) _then;
+
+/// Create a copy of ItineraryPage
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? itineraries = null,Object? nextCursor = freezed,}) {
+  return _then(_ItineraryPage(
+itineraries: null == itineraries ? _self._itineraries : itineraries // ignore: cast_nullable_to_non_nullable
+as List<ItineraryListEntry>,nextCursor: freezed == nextCursor ? _self.nextCursor : nextCursor // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
