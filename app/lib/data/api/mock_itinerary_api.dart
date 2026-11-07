@@ -5,7 +5,8 @@ import 'itinerary_api.dart';
 
 /// サーバーなしで画面を作り込むための [ItineraryApi]。
 ///
-/// デザイン（docs/iterinerary_ui.html）の「みなと町 日帰り旅」を今日の日付で用意する。
+/// デザイン（docs/iterinerary_ui.html）に合わせて、今日の「みなと町 日帰り旅」と、
+/// 旅程一覧に出す「これから」「終わった旅」の旅程を、端末の日付を基準に用意する。
 /// 計算はごく簡易で、本番のロジックとは一致しない。
 class MockItineraryApi implements ItineraryApi {
   MockItineraryApi({DateTime Function()? clock})
@@ -22,7 +23,13 @@ class MockItineraryApi implements ItineraryApi {
   static const _explanationPendingPolls = 2;
   static const _seedId = 'itn_mock';
   static const _seedDepartAt = '09:00';
+  static const _seedLateDepartAt = '10:00';
   static const _seedArriveBy = '17:00';
+
+  /// 旅程一覧用の旅程の旅行日（今日からの日数。負なら過去）
+  static const _onsenDaysFromToday = 9;
+  static const _jokaDaysFromToday = 21;
+  static const _shimaDaysFromToday = -11;
   static const _defaultStayMin = 60;
   static const _shortStayMin = 30;
   static const _replacementPrice = Price(amount: 500, kind: PriceKind.fixed);
@@ -43,6 +50,30 @@ class MockItineraryApi implements ItineraryApi {
     _MockPlace('p_shiryo', '港の資料館', 'みなと町3-8', 500, '資料館', 34.564, 135.479),
     _MockPlace('p_tenbou', '夕日の展望台', 'みさき町6', 0, '展望台', 34.556, 135.468),
     _MockPlace('p_cafe', '灯台の丘カフェ', 'みさき町5-2', 900, 'カフェ', 34.559, 135.471),
+    // 山あいの温泉町（旅程一覧の「これから」）
+    _MockPlace('p_yama_station', '山あいの駅', '湯の里町1', null, '駅', 35.210, 136.020),
+    _MockPlace('p_onsen', '湯けむり通りの共同浴場', '湯の里町2-5', 600, '温泉', 35.212, 136.024),
+    _MockPlace('p_tsuribashi', '渓谷の吊り橋', '湯の里町奥谷', 0, '名所', 35.218, 136.030),
+    _MockPlace('p_yama_tera', '山寺の展望台', '湯の里町山上', 300, '寺', 35.215, 136.016),
+    // 城下町（旅程一覧の「これから」）
+    _MockPlace('p_joka_station', '城下町駅', '城下町本町1', null, '駅', 35.480, 136.760),
+    _MockPlace('p_shiro', 'お城の天守', '城下町城山1', 500, '城', 35.484, 136.764),
+    _MockPlace('p_bukeyashiki', '武家屋敷通り', '城下町西町', 0, '街並み', 35.482, 136.756),
+    _MockPlace('p_wagashi', '老舗の和菓子店', '城下町本町3-2', 700, '和菓子', 35.479, 136.762),
+    _MockPlace('p_teien', '堀端の庭園', '城下町堀端2', 400, '庭園', 35.486, 136.758),
+    _MockPlace('p_shoka', '古い商家の資料館', '城下町東町4', 300, '資料館', 35.478, 136.766),
+    // 島の港町（旅程一覧の「終わった旅」）
+    _MockPlace('p_shima_port', '島の港', 'しま町港1', null, '港', 34.320, 134.050),
+    _MockPlace('p_shima_toudai', '岬の白い灯台', 'しま町岬', 0, '名所', 34.314, 134.044),
+    _MockPlace(
+      'p_shima_shokudo',
+      '港の海鮮食堂',
+      'しま町港3',
+      1800,
+      '食堂',
+      34.321,
+      134.052,
+    ),
   ];
 
   final DateTime Function() _clock;
@@ -64,10 +95,14 @@ class MockItineraryApi implements ItineraryApi {
     orElse: () => _MockPlace(placeId, placeId, '', null, '', 0, 0),
   );
 
-  String _today() {
+  String _today() => _dateFromToday(0);
+
+  /// 今日から [days] 日後（負なら前）の日付（YYYY-MM-DD）
+  String _dateFromToday(int days) {
     final now = _clock();
+    final d = DateTime(now.year, now.month, now.day + days);
     String two(int v) => v.toString().padLeft(2, '0');
-    return '${now.year}-${two(now.month)}-${two(now.day)}';
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
   DateTime _at(String date, String hhmm) => DateTime.parse('${date}T$hhmm:00');
@@ -131,6 +166,71 @@ class MockItineraryApi implements ItineraryApi {
       ],
     );
     _save(itinerary);
+    _seedListSamples();
+  }
+
+  /// 旅程一覧の「これから」「終わった旅」に出す旅程
+  void _seedListSamples() {
+    PlaceInput input(String placeId, Priority priority, int stayMin) =>
+        PlaceInput(placeId: placeId, priority: priority, stayMin: stayMin);
+
+    final yama = _endpoint('p_yama_station', null, null);
+    _save(
+      _build(
+        id: _nextId('itn'),
+        version: 1,
+        title: '山あいの温泉町めぐり',
+        date: _dateFromToday(_onsenDaysFromToday),
+        start: yama,
+        departAt: _seedLateDepartAt,
+        end: yama,
+        arriveBy: _seedArriveBy,
+        places: [
+          input('p_onsen', Priority.must, _defaultStayMin * 2),
+          input('p_tsuribashi', Priority.want, _defaultStayMin),
+          input('p_yama_tera', Priority.optional, _defaultStayMin),
+        ],
+      ),
+    );
+
+    final joka = _endpoint('p_joka_station', null, null);
+    _save(
+      _build(
+        id: _nextId('itn'),
+        version: 1,
+        title: '城下町さんぽ',
+        date: _dateFromToday(_jokaDaysFromToday),
+        start: joka,
+        departAt: _seedDepartAt,
+        end: joka,
+        arriveBy: _seedArriveBy,
+        places: [
+          input('p_shiro', Priority.must, _defaultStayMin),
+          input('p_bukeyashiki', Priority.want, _defaultStayMin),
+          input('p_wagashi', Priority.optional, _shortStayMin),
+          input('p_teien', Priority.want, _defaultStayMin),
+          input('p_shoka', Priority.optional, _shortStayMin),
+        ],
+      ),
+    );
+
+    final port = _endpoint('p_shima_port', null, null);
+    _save(
+      _build(
+        id: _nextId('itn'),
+        version: 1,
+        title: '島の港町 日帰り',
+        date: _dateFromToday(_shimaDaysFromToday),
+        start: port,
+        departAt: _seedLateDepartAt,
+        end: port,
+        arriveBy: _seedArriveBy,
+        places: [
+          input('p_shima_toudai', Priority.must, _defaultStayMin),
+          input('p_shima_shokudo', Priority.want, _defaultStayMin),
+        ],
+      ),
+    );
   }
 
   void _save(Itinerary itinerary) {

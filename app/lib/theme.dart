@@ -32,6 +32,13 @@ abstract final class _Palette {
   // 「除外」はデザインに無いため、警告系と区別できる赤系を当てている
   static const dropSoft = Color(0xFFFBEAEA);
   static const dropText = Color(0xFF8E1F1F);
+
+  // 削除などの取り消せない操作
+  static const dangerSoft = Color(0xFFFDECEA);
+  static const danger = Color(0xFFA3231A);
+
+  /// ボトムシートの背面（ink の 45%）
+  static const scrim = Color(0x7316191D);
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +106,8 @@ class AppTokens extends ThemeExtension<AppTokens> {
     required this.radiusSmall,
     required this.radiusMedium,
     required this.radiusLarge,
+    required this.radiusXLarge,
+    required this.radiusSheet,
     required this.radiusPill,
     // 高さ・サイズ
     required this.primaryButtonHeight,
@@ -106,10 +115,12 @@ class AppTokens extends ThemeExtension<AppTokens> {
     required this.inputHeight,
     required this.segmentHeight,
     required this.delayChoiceHeight,
+    required this.sheetActionHeight,
     required this.iconButtonSize,
     required this.iconSize,
     required this.smallIconSize,
     required this.timeColumnWidth,
+    required this.dateBadgeWidth,
     required this.borderWidth,
     required this.selectedBorderWidth,
     required this.legLineWidth,
@@ -126,6 +137,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     required this.changeRetime,
     required this.changeKeep,
     required this.changeDrop,
+    required this.danger,
     required this.warning,
     required this.info,
   });
@@ -147,6 +159,8 @@ class AppTokens extends ThemeExtension<AppTokens> {
   final double radiusSmall;
   final double radiusMedium;
   final double radiusLarge;
+  final double radiusXLarge;
+  final double radiusSheet;
   final double radiusPill;
 
   final double primaryButtonHeight;
@@ -154,10 +168,12 @@ class AppTokens extends ThemeExtension<AppTokens> {
   final double inputHeight;
   final double segmentHeight;
   final double delayChoiceHeight;
+  final double sheetActionHeight;
   final double iconButtonSize;
   final double iconSize;
   final double smallIconSize;
   final double timeColumnWidth;
+  final double dateBadgeWidth;
   final double borderWidth;
   final double selectedBorderWidth;
   final double legLineWidth;
@@ -174,6 +190,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
   final LabelColors changeRetime;
   final LabelColors changeKeep;
   final LabelColors changeDrop;
+  final LabelColors danger;
   final NoticeColors warning;
   final NoticeColors info;
 
@@ -194,16 +211,20 @@ class AppTokens extends ThemeExtension<AppTokens> {
     radiusSmall: 12,
     radiusMedium: 14,
     radiusLarge: 16,
+    radiusXLarge: 18,
+    radiusSheet: 22,
     radiusPill: 999,
     primaryButtonHeight: 60,
     secondaryButtonHeight: 48,
     inputHeight: 52,
     segmentHeight: 44,
     delayChoiceHeight: 76,
+    sheetActionHeight: 56,
     iconButtonSize: 48,
     iconSize: 24,
     smallIconSize: 18,
     timeColumnWidth: 56,
+    dateBadgeWidth: 56,
     borderWidth: 1,
     selectedBorderWidth: 2,
     legLineWidth: 2,
@@ -239,6 +260,10 @@ class AppTokens extends ThemeExtension<AppTokens> {
     changeDrop: LabelColors(
       background: _Palette.dropSoft,
       foreground: _Palette.dropText,
+    ),
+    danger: LabelColors(
+      background: _Palette.dangerSoft,
+      foreground: _Palette.danger,
     ),
     warning: NoticeColors(
       background: _Palette.warnSoft,
@@ -278,16 +303,20 @@ class AppTokens extends ThemeExtension<AppTokens> {
       radiusSmall: radiusSmall,
       radiusMedium: radiusMedium,
       radiusLarge: radiusLarge,
+      radiusXLarge: radiusXLarge,
+      radiusSheet: radiusSheet,
       radiusPill: radiusPill,
       primaryButtonHeight: primaryButtonHeight,
       secondaryButtonHeight: secondaryButtonHeight,
       inputHeight: inputHeight,
       segmentHeight: segmentHeight,
       delayChoiceHeight: delayChoiceHeight,
+      sheetActionHeight: sheetActionHeight,
       iconButtonSize: iconButtonSize,
       iconSize: iconSize,
       smallIconSize: smallIconSize,
       timeColumnWidth: timeColumnWidth,
+      dateBadgeWidth: dateBadgeWidth,
       borderWidth: borderWidth,
       selectedBorderWidth: selectedBorderWidth,
       legLineWidth: legLineWidth,
@@ -315,6 +344,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
       changeRetime: LabelColors.lerp(changeRetime, other.changeRetime, t),
       changeKeep: LabelColors.lerp(changeKeep, other.changeKeep, t),
       changeDrop: LabelColors.lerp(changeDrop, other.changeDrop, t),
+      danger: LabelColors.lerp(danger, other.danger, t),
       warning: NoticeColors.lerp(warning, other.warning, t),
       info: NoticeColors.lerp(info, other.info, t),
     );
@@ -334,6 +364,8 @@ abstract final class AppTheme {
   static const _fontFamily = 'Noto Sans JP';
   static const _lineHeight = 1.4;
   static const _bodyLineHeight = 1.6;
+  static const _dragHandleWidth = 40.0;
+  static const _dragHandleHeight = 5.0;
 
   static const colorScheme = ColorScheme(
     brightness: Brightness.light,
@@ -370,6 +402,7 @@ abstract final class AppTheme {
     ),
     titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
     titleMedium: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+    titleSmall: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
     bodyLarge: TextStyle(fontSize: 16),
     bodyMedium: TextStyle(fontSize: 15, height: _bodyLineHeight),
     bodySmall: TextStyle(fontSize: 14),
@@ -452,6 +485,18 @@ abstract final class AppTheme {
         color: colorScheme.outlineVariant,
         thickness: tokens.borderWidth,
         space: tokens.borderWidth,
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: colorScheme.surface,
+        modalBarrierColor: _Palette.scrim,
+        showDragHandle: true,
+        dragHandleColor: colorScheme.outline,
+        dragHandleSize: const Size(_dragHandleWidth, _dragHandleHeight),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(tokens.radiusSheet),
+          ),
+        ),
       ),
       snackBarTheme: const SnackBarThemeData(
         behavior: SnackBarBehavior.floating,

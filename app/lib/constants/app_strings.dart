@@ -13,6 +13,41 @@ abstract final class AppStrings {
   static const priceUnknown = '料金不明';
   static const unchanged = '（変わらず）';
 
+  // 旅程一覧（F-08、F-09、F-11）
+  static const listTitle = 'わたしの旅程';
+  static const listSubtitle = '1 日ごとに旅程をつくれます';
+  static const listTodayPrefix = '今日・';
+  static const listUpcoming = 'これから';
+  static const listPast = '終わった旅';
+  static const listEmpty = 'まだ旅程がありません。\n下のボタンから作ってみましょう';
+  static const listCreate = '新しい旅程を作る';
+  static const listDepartSuffix = ' 発';
+  static const listArriveSuffix = ' 着';
+  static const listArrow = ' → ';
+  static const listPlaceSeparator = '・';
+  static const listPlaceCountSuffix = 'か所';
+  static const listMorePlacesPrefix = ' ほか';
+  static const listDaysLeftPrefix = 'あと';
+  static const listDaysLeftSuffix = '日';
+  static const listTomorrow = '明日';
+  static const listExpiresSuffix = 'に自動で消えます';
+  static const listMenuSuffix = ' の操作';
+  static const listActionEdit = '名前と日付を変える';
+  static const listActionCopy = '別の日にコピーする';
+  static const listActionDelete = 'この旅程を削除する';
+  static const listClose = '閉じる';
+  static const listDeleteConfirm = 'この旅程を削除しますか？\n削除すると元に戻せません。';
+  static const listDeleteButton = '削除する';
+  static const listCancel = 'やめる';
+  static const listEditTitle = '名前と日付を変える';
+  static const listEditNameLabel = '旅程の名前';
+  static const listEditDateLabel = '旅行日';
+  static const listEditSave = '変更する';
+  static const listCopyHelp = 'コピー先の旅行日を選ぶ';
+  static const listEdited = '旅程を変更しました';
+  static const listCopied = '旅程をコピーしました';
+  static const listDeleted = '旅程を削除しました';
+
   // 3.1 行き先と優先度
   static const planTitle = 'どこに行きたいですか？';
   static const planSubtitle = '大事な所に優先度をつけてください';
