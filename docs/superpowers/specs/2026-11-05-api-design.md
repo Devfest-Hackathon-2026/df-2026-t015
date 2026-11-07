@@ -96,7 +96,7 @@ API仕様が「複数の旅程、出発と終わり、地図からの選択」�
 
 - #12 GET /places/nearby: lat・lng（必須）、radius（100〜5000m、既定1000）、q（任意）。q がなければ Places Nearby Search、あれば Text Search を使い、範囲外を除いて最大20件。typeLabel は Places の primaryTypeDisplayName。
 - #13 GET /places/:placeId: date（任意、既定は今日）の営業時間を返す。直近7日は currentOpeningHours、それ以降は regularOpeningHours。料金は priceRange（円）があるときだけ estimate。
-- #14 PATCH /itineraries/:id: title（1〜50文字）。If-Match 必須。
+- #14 PATCH /itineraries/:id: title（1〜100文字。仕様は1〜50文字だが、#3・#16 と揃えて100文字に統一）。If-Match 必須。
 - #15 DELETE /itineraries/:id: If-Match 必須。旅程と組み直し案を同じトランザクションで削除し、204。
 - #16 POST /itineraries/:id/copy: date 必須、title 任意。元の訪問順で新しい日付の営業時間・時刻表に組み直す。上限超過は 422 ITINERARY_LIMIT。
 - ルーターはパスごとに1つのハンドラーを登録し、その中でメソッドを振り分ける（`GET /places/{placeId}` とほかの `/places/*` の衝突を避けるため）。

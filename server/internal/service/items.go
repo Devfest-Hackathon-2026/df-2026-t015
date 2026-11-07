@@ -621,10 +621,11 @@ func (a *App) gapCandidates(ctx context.Context, trip Itinerary, previous, next 
 	return candidates, nil
 }
 
-// ValidateTitle は旅程名（1〜50文字）を確認する。PATCH /itineraries/:id と POST /itineraries/:id/copy で使う。
+// ValidateTitle は旅程名（1〜100文字）を確認する。POST /itineraries・PATCH /itineraries/:id・
+// POST /itineraries/:id/copy で同じ上限を使い、作成した旅程名でコピーや変更が失敗しないようにする。
 func ValidateTitle(title string) error {
-	if !Text(title, 1, 50) {
-		return Invalid("title は1〜50文字で指定してください")
+	if !Text(title, 1, MaxTitleLength) {
+		return Invalid("title は1〜100文字で指定してください")
 	}
 	return nil
 }

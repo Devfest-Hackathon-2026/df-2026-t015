@@ -129,7 +129,7 @@ func TestPatchAndDeleteRequireVersionAndTitle(t *testing.T) {
 	for _, test := range []struct{ method, body, version string }{
 		{"PATCH", `{"title":"旅"}`, ""},
 		{"PATCH", `{"title":""}`, "3"},
-		{"PATCH", `{"title":"` + strings.Repeat("あ", 51) + `"}`, "3"},
+		{"PATCH", `{"title":"` + strings.Repeat("あ", 101) + `"}`, "3"},
 		{"DELETE", "", ""},
 	} {
 		r := httptest.NewRequest(test.method, "/itineraries/trip", strings.NewReader(test.body))
@@ -157,5 +157,15 @@ func TestWrongMethodIsJSON405(t *testing.T) {
 		if w.Code != 405 || json.Unmarshal(w.Body.Bytes(), &body) != nil || body.Error.Code != "METHOD_NOT_ALLOWED" || w.Header().Get("Allow") == "" {
 			t.Fatalf("%s: %d %s", route, w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestTitleLengthIsSharedAcrossCreateRenameAndCopy(t *testing.T) {
+	long := strings.Repeat("あ", 100)
+	if err := service.ValidateTitle(long); err != nil {
+		t.Fatalf("100 characters rejected: %v", err)
+	}
+	if err := service.ValidateTitle(long + "あ"); err == nil {
+		t.Fatal("101 characters accepted")
 	}
 }

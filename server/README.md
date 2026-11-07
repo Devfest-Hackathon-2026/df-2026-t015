@@ -90,7 +90,7 @@ AI（Gemini）の使い方は「サーバーが事実を計算し、AIは選択�
 - 出発地（`start`）と終わる場所（`end`）は `placeId`、または地図で選んだ地点の `location` と `name` で指定します。終わる場所への移動も最後の Leg（`toItemId: "end"`）として計算し、終わりの判定は終わる場所に着く時刻（`end.arriveAt`、`summary.endAt`）で行います。
 - 必須の予定が入りきらない場合は422 `MUST_ITEMS_INFEASIBLE`、行き先をすべて外しても終わる場所に `end.arriveBy` までに着けない場合は422 `END_INFEASIBLE` です。
 - `GET /places/:placeId` の営業時間は、`date` が今日から7日以内なら Places の `currentOpeningHours`（臨時営業・臨時休業を含む）、それ以降は通常営業時間の曜日で判定します。区間が複数ある日は最初に開く時刻と最後に閉まる時刻を返します。料金は Places の `priceRange`（円）がある施設だけ `kind: estimate` で返します。
-- `PATCH /itineraries/:id` と `POST /itineraries/:id/copy` の `title` は1〜50文字です（`POST /itineraries` は従来どおり1〜100文字）。
+- 旅程名 `title` は、作成（`POST /itineraries`）・名前の変更（`PATCH /itineraries/:id`）・コピー（`POST /itineraries/:id/copy`）のすべてで1〜100文字です。仕様の #14 は1〜50文字ですが、作成時の上限（100文字）と揃えないと、51文字以上の旅程名をそのままコピー・再保存できなくなるため100文字に統一しています。
 - `DELETE /itineraries/:id` は旅程とその組み直し案を1つのトランザクションで削除し、204を返します。
 - `POST /itineraries/:id/copy` は元の訪問順・優先度・滞在時間・出発と終わりを引き継ぎ、新しい日付の営業時間と時刻表で組み直します（AIは使いません）。完了済みの状態は引き継がず、入りきらない行き先は `dropped` に入ります。
 - `PUT /itineraries/:id/places` は `date`・`start`・`end` を省略すると今の値のままです。`date` を変えると、完了済み・滞在中の予定も含めて旅程全体を作り直します。同じ日のまま旅程の開始後に出発地・出発時刻を変えることはできません（400）。

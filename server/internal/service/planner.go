@@ -42,6 +42,9 @@ func ValidateVisits(visits []Visit) error {
 // MaxItineraries は1人が保存できる旅程の件数。
 const MaxItineraries = 20
 
+// MaxTitleLength は旅程名の最大文字数。作成・名前の変更・コピーで共通。
+const MaxTitleLength = 100
+
 func validEndpoint(id *string, location *Point, name, label string) error {
 	if id != nil {
 		if !ValidID(*id) || location != nil {
@@ -80,8 +83,8 @@ func ValidateEnd(date string, end End) (time.Time, error) {
 }
 
 func ValidatePlan(input PlanInput) error {
-	if !Text(input.Title, 1, 100) {
-		return Invalid("title が不正です")
+	if err := ValidateTitle(input.Title); err != nil {
+		return err
 	}
 	start, err := ValidateStart(input.Date, input.Start)
 	if err != nil {
