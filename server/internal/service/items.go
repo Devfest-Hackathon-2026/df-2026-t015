@@ -2,7 +2,8 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -173,7 +174,7 @@ func (a *App) Edit(ctx context.Context, old Itinerary, input EditInput) (Itinera
 	}
 	if count == 0 {
 		plan := PlanInput{Title: old.Title, Date: date, Start: start, End: end, Places: input.Places}
-		next, err := a.Plan(ctx, plan)
+		next, err := a.replanPart(ctx, plan, old.Items, nil)
 		if err != nil {
 			return Itinerary{}, err
 		}
@@ -218,11 +219,57 @@ func (a *App) Edit(ctx context.Context, old Itinerary, input EditInput) (Itinera
 		return a.suffix(ctx, old, old.Items[:count], depart, nil, false)
 	}
 	plan := PlanInput{Title: old.Title, Date: date, Start: Start{PlaceID: placeRef(last.PlaceID), Name: last.Name, DepartAt: depart.In(JST).Format("15:04")}, End: end, Places: remaining}
-	next, err := a.Plan(ctx, plan)
+	next, err := a.replanPart(ctx, plan, old.Items[count:], old.Items[:count])
 	if err != nil {
 		return Itinerary{}, err
 	}
 	return joinPrefix(old, old.Items[:count], next, old.Start), nil
+}
+
+// replanPart は編集後の行き先（input.Places）を、今の順番（current）を基準に部分的に組み直す。
+// 基準の順番は「変更のない施設は今の順番のまま、追加された施設を最小コストの位置に挿入」したもの。
+// Gemini には固定の予定と変更点を渡して並べ直させ、両方を組んで良い方を採る。
+func (a *App) replanPart(ctx context.Context, input PlanInput, current []Item, fixed []Item) (Itinerary, error) {
+	if err := ValidatePlan(input); err != nil {
+		return Itinerary{}, err
+	}
+	places, err := a.Places(ctx, input.Places, input.Start.PlaceID, input.End.PlaceID)
+	if err != nil {
+		return Itinerary{}, err
+	}
+	fillEndpoints(&input, places)
+	byID := map[string]Visit{}
+	for _, visit := range input.Places {
+		byID[visit.PlaceID] = visit
+	}
+	edit := &editContext{FixedItems: []string{}, CurrentOrder: []string{}, Added: []string{}, Removed: []string{}, Updated: []string{}}
+	for _, item := range fixed {
+		edit.FixedItems = append(edit.FixedItems, item.Name)
+	}
+	kept := []Visit{}
+	inCurrent := map[string]bool{}
+	for _, item := range current {
+		inCurrent[item.PlaceID] = true
+		edit.CurrentOrder = append(edit.CurrentOrder, item.PlaceID)
+		visit, ok := byID[item.PlaceID]
+		if !ok {
+			edit.Removed = append(edit.Removed, item.Name)
+			continue
+		}
+		kept = append(kept, visit)
+		if visit.Priority != item.Priority || visit.StayMin != item.StayMin {
+			edit.Updated = append(edit.Updated, item.PlaceID)
+		}
+	}
+	added := []Visit{}
+	for _, visit := range input.Places {
+		if !inCurrent[visit.PlaceID] {
+			added = append(added, visit)
+			edit.Added = append(edit.Added, visit.PlaceID)
+		}
+	}
+	base := InsertCheapest(*input.Start.Location, input.End.Location, kept, added, places)
+	return a.arrange(ctx, arrangeRequest{Input: input, Places: places, Base: base, Prompt: orderPrompt(input, places, base, edit)})
 }
 
 // Add は施設を insertAfterItemId の後ろに追加する。insertAfterItemId が空なら最後の予定の後ろに追加する。
@@ -281,6 +328,7 @@ func (a *App) locate(ctx context.Context, point Waypoint) (Point, error) {
 
 type Suggestion struct {
 	Place             Place  `json:"place"`
+	TypeLabel         string `json:"typeLabel,omitempty"`
 	Reason            string `json:"reason"`
 	StayMin           int    `json:"stayMin"`
 	Price             Price  `json:"price"`
@@ -289,18 +337,58 @@ type Suggestion struct {
 		Mode        string `json:"mode"`
 		DurationMin int    `json:"durationMin"`
 	} `json:"legFromPrev"`
+	// LegToNext は次の予定（最後の予定の後なら終わる場所）への移動。
+	LegToNext struct {
+		Mode        string `json:"mode"`
+		DurationMin int    `json:"durationMin"`
+	} `json:"legToNext"`
 }
 
-func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, after string) ([]Suggestion, error) {
+// Idea は施設を決めない、空き時間の過ごし方のおすすめ（例: 駅前のカフェで休憩する）。
+type Idea struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	DurationMin int    `json:"durationMin"`
+}
+
+type SuggestResult struct {
+	Suggestions []Suggestion `json:"suggestions"`
+	Ideas       []Idea       `json:"ideas"`
+}
+
+// suggestMask は空き時間の候補探しに使う項目。営業時間も取得する。
+const suggestMask = nearbyMask + ",places.regularOpeningHours"
+
+// minimumStay はこれより短くしか過ごせない場所は提案しない（分）。
+const minimumStay = 15
+
+// gapCandidate は空き時間の候補。前後の移動時間を差し引いた、滞在に使える時間を持つ。
+type gapCandidate struct {
+	Place        Place
+	TypeLabel    string
+	In, Out      Leg
+	AvailableMin int
+	Hours        *OpeningHours
+}
+
+// Suggest は空き時間 from〜to の使い方を提案する（F-07）。
+//  1. 直前の予定（なければ出発地）の周辺を Nearby Search で探し、直線距離で近い順に絞る。
+//  2. 各候補について前後の移動時間を Routes で求め、空き時間から差し引いた「滞在に使える時間」を出す。
+//     その時間が minimumStay 分に満たない候補や、営業時間外の候補はここで除く。
+//  3. Gemini が候補から最大5件を選び、滞在に使える時間以内の stayMin と理由をつける。
+//     あわせて、施設を決めない過ごし方（ideas）を最大5件返す。
+//  4. 選ばれた候補を実際の時刻で検証し、次の予定に間に合うものだけ返す。
+func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, after string) (SuggestResult, error) {
+	empty := SuggestResult{Suggestions: []Suggestion{}, Ideas: []Idea{}}
 	if from.In(JST).Format("2006-01-02") != trip.Date || to.In(JST).Format("2006-01-02") != trip.Date || !to.After(from) {
-		return nil, Invalid("旅程と同日の空き時間を指定してください")
+		return empty, Invalid("旅程と同日の空き時間を指定してください")
 	}
 	index := -1
 	for i, item := range trip.Items {
 		if after == "" {
 			end, err := time.Parse(time.RFC3339, item.EndAt)
 			if err != nil {
-				return nil, Upstream()
+				return empty, Upstream()
 			}
 			if !end.After(from) {
 				index = i
@@ -310,45 +398,180 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 		}
 	}
 	if after != "" && after != "start" && index < 0 {
-		return nil, Invalid("afterItemId が不正です")
+		return empty, Invalid("afterItemId が不正です")
 	}
 	previous := trip.Start.Waypoint()
+	previousName := trip.Start.Name
 	earliest, err := time.Parse(time.RFC3339, trip.Start.DepartAt)
 	if err != nil {
-		return nil, Upstream()
+		return empty, Upstream()
 	}
 	if index >= 0 {
 		previous = Waypoint{PlaceID: trip.Items[index].PlaceID}
+		previousName = trip.Items[index].Name
 		earliest, err = time.Parse(time.RFC3339, trip.Items[index].EndAt)
 		if err != nil {
-			return nil, Upstream()
+			return empty, Upstream()
 		}
 	}
 	// 次の予定がなければ、終わる場所に着きたい時刻までが空き時間になる。
 	next := trip.End.Waypoint()
+	nextName := trip.End.Name
 	latest, err := At(trip.Date, trip.End.ArriveBy)
 	if err != nil {
-		return nil, Upstream()
+		return empty, Upstream()
 	}
 	if index+1 < len(trip.Items) {
 		next = Waypoint{PlaceID: trip.Items[index+1].PlaceID}
+		nextName = trip.Items[index+1].Name
 		latest, err = time.Parse(time.RFC3339, trip.Items[index+1].StartAt)
 		if err != nil {
-			return nil, Upstream()
+			return empty, Upstream()
 		}
 	}
 	if from.Before(earliest) || to.After(latest) {
-		return nil, Invalid("指定した時間帯は空き時間ではありません")
+		return empty, Invalid("指定した時間帯は空き時間ではありません")
 	}
 	origin, err := a.locate(ctx, previous)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
-	places, err := a.Maps.Search(ctx, "短時間で立ち寄れる観光スポット、公園、カフェ", &origin)
+	window := int(to.Sub(from).Minutes())
+	candidates, err := a.gapCandidates(ctx, trip, previous, next, origin, from, to)
+	if err != nil {
+		return empty, err
+	}
+	byID := map[string]gapCandidate{}
+	ids := []string{}
+	type candidateFact struct {
+		PlaceID      string        `json:"placeId"`
+		Name         string        `json:"name"`
+		TypeLabel    string        `json:"typeLabel"`
+		TravelInMin  int           `json:"travelInMin"`
+		TravelOutMin int           `json:"travelOutMin"`
+		AvailableMin int           `json:"availableMin"`
+		OpeningHours *OpeningHours `json:"openingHours"`
+	}
+	facts := []candidateFact{}
+	for _, c := range candidates {
+		byID[c.Place.PlaceID] = c
+		ids = append(ids, c.Place.PlaceID)
+		facts = append(facts, candidateFact{PlaceID: c.Place.PlaceID, Name: c.Place.Name, TypeLabel: c.TypeLabel, TravelInMin: c.In.DurationMin, TravelOutMin: c.Out.DurationMin, AvailableMin: c.AvailableMin, OpeningHours: c.Hours})
+	}
+	properties := map[string]any{
+		"ideas": map[string]any{
+			"type": "array", "maxItems": 5,
+			"items": ObjectSchema(map[string]any{
+				"title":       map[string]any{"type": "string"},
+				"description": map[string]any{"type": "string"},
+				"durationMin": map[string]any{"type": "integer", "minimum": 5, "maximum": window},
+			}),
+		},
+	}
+	if len(ids) > 0 {
+		properties["suggestions"] = map[string]any{
+			"type": "array", "maxItems": 5,
+			"items": ObjectSchema(map[string]any{
+				"placeId": map[string]any{"type": "string", "enum": ids},
+				"reason":  map[string]any{"type": "string"},
+				"stayMin": map[string]any{"type": "integer", "minimum": 10, "maximum": 480},
+			}),
+		}
+	}
+	prompt := Prompt{
+		Task: "旅程の空き時間の使い方を提案してください。",
+		Rules: []string{
+			"suggestions は candidates から、空き時間を十分に楽しめる施設を最大5件選ぶ。availableMin（前後の移動時間を除いて滞在に使える分数）が短すぎて慌ただしくなる施設は選ばない。",
+			"stayMin は availableMin 以内にし、その施設で過ごすのにちょうどよい分数にする。",
+			"reason は、その施設で何ができるか・なぜこの空き時間に合うかを40文字程度で書く。typeLabel と移動時間など入力の事実だけを根拠にする。",
+			"ideas は施設を決めない時間の過ごし方を3〜5件出す（例: 駅前で軽く散歩する、カフェで次の予定を確認する）。durationMin は空き時間（windowMin）以内にする。",
+			"previous（直前の場所）と next（次の目的地）の間で無理なくできることにする。",
+		},
+		Data: map[string]any{
+			"windowMin":  window,
+			"from":       from.In(JST).Format("15:04"),
+			"to":         to.In(JST).Format("15:04"),
+			"previous":   previousName,
+			"next":       nextName,
+			"candidates": facts,
+		},
+		Temperature: 0.5,
+	}
+	var output struct {
+		Suggestions []struct {
+			PlaceID string `json:"placeId"`
+			Reason  string `json:"reason"`
+			StayMin int    `json:"stayMin"`
+		} `json:"suggestions"`
+		Ideas []Idea `json:"ideas"`
+	}
+	if err := a.AI.Ask(ctx, prompt, ObjectSchema(properties), &output); err != nil {
+		return empty, err
+	}
+	if output.Ideas == nil || (len(ids) > 0 && output.Suggestions == nil) {
+		return empty, Upstream()
+	}
+	result := SuggestResult{Suggestions: []Suggestion{}, Ideas: []Idea{}}
+	for _, idea := range output.Ideas {
+		if Text(idea.Title, 1, 60) && Text(idea.Description, 1, 300) && idea.DurationMin >= 5 && idea.DurationMin <= window && len(result.Ideas) < 5 {
+			result.Ideas = append(result.Ideas, idea)
+		}
+	}
+	seen := map[string]bool{}
+	for _, selected := range output.Suggestions {
+		c, ok := byID[selected.PlaceID]
+		if !ok || seen[selected.PlaceID] || !Text(selected.Reason, 1, 500) || len(result.Suggestions) >= 5 {
+			continue
+		}
+		seen[selected.PlaceID] = true
+		// AI の滞在時間が使える時間を超えたら、使える時間に収める。
+		stay := min(selected.StayMin, c.AvailableMin)
+		if stay < minimumStay {
+			continue
+		}
+		arrival, err := time.Parse(time.RFC3339, c.In.ArriveAt)
+		if err != nil {
+			return empty, Upstream()
+		}
+		start, _, ok := OpenAt(c.Place.Hours, arrival, stay)
+		if !ok {
+			continue
+		}
+		finish := start.Add(time.Duration(stay) * time.Minute)
+		onward, err := a.Maps.Route(ctx, Waypoint{PlaceID: c.Place.PlaceID}, next, finish)
+		if err != nil {
+			return empty, err
+		}
+		reach, err := time.Parse(time.RFC3339, onward.ArriveAt)
+		if err != nil {
+			return empty, Upstream()
+		}
+		if reach.After(to) {
+			continue
+		}
+		suggestion := Suggestion{Place: c.Place, TypeLabel: c.TypeLabel, Reason: strings.TrimSpace(selected.Reason), StayMin: stay, Price: Price{Kind: "unknown"}, InsertAfterItemID: "start"}
+		if index >= 0 {
+			suggestion.InsertAfterItemID = trip.Items[index].ItemID
+		}
+		suggestion.LegFromPrev.Mode, suggestion.LegFromPrev.DurationMin = c.In.Mode, c.In.DurationMin
+		suggestion.LegToNext.Mode, suggestion.LegToNext.DurationMin = onward.Mode, onward.DurationMin
+		result.Suggestions = append(result.Suggestions, suggestion)
+	}
+	return result, nil
+}
+
+// gapCandidates は空き時間に寄れる候補を探し、前後の移動時間と滞在に使える時間を求める。
+func (a *App) gapCandidates(ctx context.Context, trip Itinerary, previous, next Waypoint, origin Point, from, to time.Time) ([]gapCandidate, error) {
+	window := int(to.Sub(from).Minutes())
+	if window < minimumStay {
+		return nil, nil
+	}
+	// 徒歩（約80m/分）で空き時間の3分の1以内に着ける範囲を目安に探す。
+	radius := min(max(window/3*80, 300), 3000)
+	found, err := a.Maps.nearby(ctx, origin, radius, "", suggestMask)
 	if err != nil {
 		return nil, err
 	}
-	byID := map[string]Place{}
 	existing := map[string]bool{}
 	for _, id := range []*string{trip.Start.PlaceID, trip.End.PlaceID} {
 		if id != nil {
@@ -358,85 +581,44 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 	for _, item := range trip.Items {
 		existing[item.PlaceID] = true
 	}
-	candidates := []Place{}
-	for _, place := range places {
-		if !existing[place.PlaceID] {
-			byID[place.PlaceID] = place
-			candidates = append(candidates, place)
+	options := []nearbyResult{}
+	for _, value := range found {
+		if !existing[value.Place.PlaceID] {
+			options = append(options, value)
 		}
 	}
-	result := []Suggestion{}
-	if len(candidates) == 0 {
-		return result, nil
-	}
-	var output struct {
-		Suggestions []struct {
-			PlaceID string `json:"placeId"`
-			Reason  string `json:"reason"`
-			StayMin int    `json:"stayMin"`
-		} `json:"suggestions"`
-	}
-	schema := ObjectSchema(map[string]any{
-		"suggestions": map[string]any{
-			"type": "array", "maxItems": 5,
-			"items": ObjectSchema(map[string]any{
-				"placeId": map[string]string{"type": "string"},
-				"reason":  map[string]string{"type": "string"},
-				"stayMin": map[string]any{"type": "integer", "minimum": 10, "maximum": 480},
-			}),
-		},
+	// Routes の呼び出しを抑えるため、直線距離で近い8件だけ移動時間を調べる。
+	sort.SliceStable(options, func(i, j int) bool {
+		return distance(origin, options[i].Place.Location) < distance(origin, options[j].Place.Location)
 	})
-	data, _ := json.Marshal(map[string]any{"from": from, "to": to, "candidates": candidates})
-	if err := a.AI.Generate(ctx, "空き時間に合う施設を候補から選び、理由と滞在分数を提案してください。候補にない施設IDは使わないでください。\n"+string(data), schema, &output); err != nil {
-		return nil, err
+	if len(options) > 8 {
+		options = options[:8]
 	}
-	if output.Suggestions == nil || len(output.Suggestions) > 5 {
-		return nil, Upstream()
-	}
-	seen := map[string]bool{}
-	for _, selected := range output.Suggestions {
-		place, ok := byID[selected.PlaceID]
-		if !ok || seen[selected.PlaceID] || selected.StayMin < 10 || selected.StayMin > 480 || !Text(selected.Reason, 1, 500) {
-			return nil, Upstream()
-		}
-		seen[selected.PlaceID] = true
-		leg, err := a.Maps.Route(ctx, previous, Waypoint{PlaceID: place.PlaceID}, from)
+	day, _ := time.ParseInLocation("2006-01-02", trip.Date, JST)
+	candidates := []gapCandidate{}
+	for _, value := range options {
+		in, err := a.Maps.Route(ctx, previous, Waypoint{PlaceID: value.Place.PlaceID}, from)
 		if err != nil {
 			return nil, err
 		}
-		arrival, err := time.Parse(time.RFC3339, leg.ArriveAt)
-		if err != nil {
-			return nil, Upstream()
-		}
-		start, _, ok := OpenAt(place.Hours, arrival, selected.StayMin)
-		if !ok {
-			continue
-		}
-		finish := start.Add(time.Duration(selected.StayMin) * time.Minute)
-		if finish.After(to) {
-			continue
-		}
-		// 次の予定（最後なら終わる場所）へ、空き時間の終わりまでに着けるものだけを返す。
-		onward, err := a.Maps.Route(ctx, Waypoint{PlaceID: place.PlaceID}, next, finish)
+		out, err := a.Maps.Route(ctx, Waypoint{PlaceID: value.Place.PlaceID}, next, from)
 		if err != nil {
 			return nil, err
 		}
-		arrival, err = time.Parse(time.RFC3339, onward.ArriveAt)
+		available := window - in.DurationMin - out.DurationMin
+		if available < minimumStay {
+			continue
+		}
+		arrival, err := time.Parse(time.RFC3339, in.ArriveAt)
 		if err != nil {
 			return nil, Upstream()
 		}
-		if arrival.After(to) {
+		if _, _, ok := OpenAt(value.Place.Hours, arrival, minimumStay); !ok {
 			continue
 		}
-		suggestion := Suggestion{Place: place, Reason: selected.Reason, StayMin: selected.StayMin, Price: Price{Kind: "unknown"}, InsertAfterItemID: "start"}
-		if index >= 0 {
-			suggestion.InsertAfterItemID = trip.Items[index].ItemID
-		}
-		suggestion.LegFromPrev.Mode = leg.Mode
-		suggestion.LegFromPrev.DurationMin = leg.DurationMin
-		result = append(result, suggestion)
+		candidates = append(candidates, gapCandidate{Place: value.Place, TypeLabel: value.TypeLabel, In: in, Out: out, AvailableMin: available, Hours: DayHours(nil, value.Place.Hours, day)})
 	}
-	return result, nil
+	return candidates, nil
 }
 
 // ValidateTitle は旅程名（1〜50文字）を確認する。PATCH /itineraries/:id と POST /itineraries/:id/copy で使う。

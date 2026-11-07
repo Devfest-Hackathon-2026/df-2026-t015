@@ -7,6 +7,8 @@ import (
 	"github.com/create-alt/gen-TLE/server/internal/service"
 )
 
+// Suggestions は GET /itineraries/:id/suggestions（F-07）。
+// 前後の移動時間を除いても十分に過ごせる近くの施設（suggestions）と、施設を決めない過ごし方（ideas）を返す。
 func Suggestions(app *service.App) http.HandlerFunc {
 	return service.Handle(func(w http.ResponseWriter, r *http.Request) error {
 		from, err := time.Parse(time.RFC3339, r.URL.Query().Get("from"))
@@ -21,11 +23,11 @@ func Suggestions(app *service.App) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		suggestions, err := app.Suggest(r.Context(), value, from.In(service.JST), to.In(service.JST), r.URL.Query().Get("afterItemId"))
+		result, err := app.Suggest(r.Context(), value, from.In(service.JST), to.In(service.JST), r.URL.Query().Get("afterItemId"))
 		if err != nil {
 			return err
 		}
-		service.JSON(w, 200, map[string]any{"suggestions": suggestions})
+		service.JSON(w, 200, result)
 		return nil
 	})
 }

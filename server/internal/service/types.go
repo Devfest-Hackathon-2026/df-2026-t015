@@ -183,8 +183,12 @@ type Preview struct {
 	Legs  []Leg  `json:"legs"`
 }
 
+// Option は組み直し案。Source は作り方（"algorithm" は AI なしの計算、"ai" は Gemini の提案）、
+// Label は画面に出す短い説明。
 type Option struct {
 	OptionID      string    `json:"optionId"`
+	Source        string    `json:"source"`
+	Label         string    `json:"label"`
 	Changes       []Change  `json:"changes"`
 	SummaryBefore Summary   `json:"summaryBefore"`
 	SummaryAfter  Summary   `json:"summaryAfter"`
@@ -198,11 +202,19 @@ type Warning struct {
 	Message string `json:"message"`
 }
 
+// ExplanationReason は変更1件ごとの理由。ItemID と Type は案の changes と同じ。
+type ExplanationReason struct {
+	ItemID string `json:"itemId"`
+	Type   string `json:"type"`
+	Reason string `json:"reason"`
+}
+
 type Explanation struct {
-	Status     string    `json:"status"`
-	Text       string    `json:"text,omitempty"`
-	Lease      string    `json:"-"`
-	LeaseUntil time.Time `json:"-"`
+	Status     string              `json:"status"`
+	Text       string              `json:"text,omitempty"`
+	Reasons    []ExplanationReason `json:"reasons,omitempty"`
+	Lease      string              `json:"-"`
+	LeaseUntil time.Time           `json:"-"`
 }
 
 type Replan struct {
