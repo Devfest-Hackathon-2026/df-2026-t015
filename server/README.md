@@ -1,12 +1,32 @@
 # Iterinerary Go API
 
-Go 1.26以上。API仕様（MVP、2026-11-06改訂版、F-01〜F-11）のうち、#1〜#11 と `GET /healthz` を実装しています。#10 は `GET /itineraries/:id/suggestions` です。#12〜#16（地図の施設、施設の詳細、旅程名の変更・削除・コピー）は未実装です。
+Go 1.26以上。API仕様（MVP、2026-11-06改訂版、F-01〜F-11）の #1〜#16 と `GET /healthz` を実装しています。
+
+| # | メソッド・パス | 用途 |
+|---|---|---|
+| 1 | `GET /places/autocomplete` | 施設名の入力補完（F-01） |
+| 2 | `POST /places/interpret` | 自由文から行き先候補（F-01、Gemini） |
+| 3 | `POST /itineraries` | 旅程の生成（F-02） |
+| 4 | `GET /me/itineraries` | 自分の旅程一覧（F-08） |
+| 5 | `GET /itineraries/:id` | 旅程の取得（F-06） |
+| 6 | `PUT /itineraries/:id/places` | 行き先・優先度・出発と終わり・旅行日の編集と再生成（F-01、F-02、F-09、F-10） |
+| 7 | `POST /itineraries/:id/replans` | 遅延の組み直し案（F-03、F-04） |
+| 8 | `GET /itineraries/:id/replans/:replanId/explanation` | 変更理由（F-05、Gemini） |
+| 9 | `POST /itineraries/:id/replans/:replanId/accept` | 組み直し案の確定（F-04） |
+| 10 | `GET /itineraries/:id/suggestions` | 空き時間の提案（F-07） |
+| 11 | `POST /itineraries/:id/items` | 提案された予定の追加（F-07） |
+| 12 | `GET /places/nearby` | 地図に表示する近くの施設（F-10） |
+| 13 | `GET /places/:placeId` | 施設の詳しい情報とその日の営業時間（F-10） |
+| 14 | `PATCH /itineraries/:id` | 旅程名の変更（F-09） |
+| 15 | `DELETE /itineraries/:id` | 旅程の削除（F-09） |
+| 16 | `POST /itineraries/:id/copy` | 旅程を別の日にコピー（F-11） |
+| — | `GET /healthz` | ヘルスチェック（認証なし） |
 
 ## 接続先の準備
 
 - Firebase Authenticationで匿名ログインを有効化する。
 - Firestoreのデータベースを作り、サーバーの実行アカウントに必要な読み書き権限を付与する。
-- Mapsの課金を設定し、Places API (New) と Routes API を有効化する。
+- Mapsの課金を設定し、Places API (New) と Routes API を有効化する。#12 は Places API の Nearby Search（名前で絞るときは Text Search）、#13 は Place Details を使います。
 - Gemini APIキーと、そのプロジェクトで利用できるモデル名を用意する。
 
 Firebase/Firestoreは公式Admin SDKとApplication Default Credentialsを使用します。ローカルでは `GOOGLE_APPLICATION_CREDENTIALS` に認証JSONの絶対パスを指定するか、ADCを設定してください。Cloud Runでは実行サービスアカウントを使用できます。
@@ -59,6 +79,10 @@ AIを使うのは自由文の候補生成、旅程生成、編集後の再生成
 - 日本時間・同日内の旅程を扱います。訪問順の最適解を保証するソルバーは含めていません。
 - 出発地（`start`）と終わる場所（`end`）は `placeId`、または地図で選んだ地点の `location` と `name` で指定します。終わる場所への移動も最後の Leg（`toItemId: "end"`）として計算し、終わりの判定は終わる場所に着く時刻（`end.arriveAt`、`summary.endAt`）で行います。
 - 必須の予定が入りきらない場合は422 `MUST_ITEMS_INFEASIBLE`、行き先をすべて外しても終わる場所に `end.arriveBy` までに着けない場合は422 `END_INFEASIBLE` です。
+- `GET /places/:placeId` の営業時間は、`date` が今日から7日以内なら Places の `currentOpeningHours`（臨時営業・臨時休業を含む）、それ以降は通常営業時間の曜日で判定します。区間が複数ある日は最初に開く時刻と最後に閉まる時刻を返します。料金は Places の `priceRange`（円）がある施設だけ `kind: estimate` で返します。
+- `PATCH /itineraries/:id` と `POST /itineraries/:id/copy` の `title` は1〜50文字です（`POST /itineraries` は従来どおり1〜100文字）。
+- `DELETE /itineraries/:id` は旅程とその組み直し案を1つのトランザクションで削除し、204を返します。
+- `POST /itineraries/:id/copy` は元の訪問順・優先度・滞在時間・出発と終わりを引き継ぎ、新しい日付の営業時間と時刻表で組み直します（AIは使いません）。完了済みの状態は引き継がず、入りきらない行き先は `dropped` に入ります。
 - `PUT /itineraries/:id/places` は `date`・`start`・`end` を省略すると今の値のままです。`date` を変えると、完了済み・滞在中の予定も含めて旅程全体を作り直します。同じ日のまま旅程の開始後に出発地・出発時刻を変えることはできません（400）。
 - Mapsの通常営業時間に基づいて検証します。営業時間が取得できない施設は `openingHours: null`、不明な料金は `amount: null, kind: unknown` とします。祝日などの臨時営業や入場料金の自動取得は含めていません。
 - 料金合計は金額が分かる予定だけを合計し、不明・目安を含む場合は `hasEstimate: true` とします。移動料金の取得は含めていません。

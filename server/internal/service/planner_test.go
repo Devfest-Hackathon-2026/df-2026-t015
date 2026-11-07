@@ -117,3 +117,39 @@ func TestReaddedItemNoLongerDropped(t *testing.T) {
 		t.Fatalf("included item remains dropped: %+v", value.Dropped)
 	}
 }
+
+func TestDayHours(t *testing.T) {
+	saturday := time.Date(2026, 11, 14, 0, 0, 0, 0, JST)
+	regular := &Hours{Periods: []Period{
+		{Open: HourPoint{Day: 6, Hour: 9}, Close: &HourPoint{Day: 6, Hour: 12}},
+		{Open: HourPoint{Day: 6, Hour: 14}, Close: &HourPoint{Day: 6, Hour: 18, Minute: 30}},
+		{Open: HourPoint{Day: 5, Hour: 18}, Close: &HourPoint{Day: 6, Hour: 2}},
+	}}
+	if hours := DayHours(nil, regular, saturday); hours == nil || hours.OpensAt != "09:00" || hours.ClosesAt != "18:30" {
+		t.Fatalf("split day: %+v", hours)
+	}
+	if hours := DayHours(nil, regular, saturday.AddDate(0, 0, -1)); hours == nil || hours.OpensAt != "18:00" || hours.ClosesAt != "02:00" {
+		t.Fatalf("overnight: %+v", hours)
+	}
+	if hours := DayHours(nil, regular, saturday.AddDate(0, 0, 1)); hours != nil {
+		t.Fatalf("closed day: %+v", hours)
+	}
+	if hours := DayHours(nil, &Hours{Periods: []Period{{Open: HourPoint{Day: 0}}}}, saturday); hours == nil || hours.ClosesAt != "24:00" {
+		t.Fatalf("always open: %+v", hours)
+	}
+	// 直近7日は currentOpeningHours を優先し、区間がない日は臨時休業として扱う。
+	today := time.Now().In(JST)
+	special := HourPoint{Day: int(today.Weekday()), Hour: 11}
+	special.Date = &struct {
+		Year  int `json:"year"`
+		Month int `json:"month"`
+		Day   int `json:"day"`
+	}{today.Year(), int(today.Month()), today.Day()}
+	current := &Hours{Periods: []Period{{Open: special, Close: &HourPoint{Day: int(today.Weekday()), Hour: 15}}}}
+	if hours := DayHours(current, regular, today); hours == nil || hours.OpensAt != "11:00" || hours.ClosesAt != "15:00" {
+		t.Fatalf("special hours: %+v", hours)
+	}
+	if hours := DayHours(current, &Hours{Periods: []Period{{Open: HourPoint{Day: int(today.AddDate(0, 0, 1).Weekday()), Hour: 9}, Close: &HourPoint{Day: int(today.AddDate(0, 0, 1).Weekday()), Hour: 17}}}}, today.AddDate(0, 0, 1)); hours != nil {
+		t.Fatalf("closed by current hours: %+v", hours)
+	}
+}

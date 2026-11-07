@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -38,6 +39,16 @@ func (s *flowStore) List(context.Context, string, int, string) (service.Itinerar
 	return service.ItineraryPage{Itineraries: []service.ItineraryEntry{{ID: s.trip.ID}}}, nil
 }
 func (s *flowStore) Count(context.Context, string) (int, error) { return s.count, nil }
+func (s *flowStore) Delete(ctx context.Context, uid, id string, version int) error {
+	if id != s.trip.ID {
+		return service.NotFound()
+	}
+	if version != s.trip.Version {
+		return service.Conflict()
+	}
+	s.trip = service.Itinerary{}
+	return nil
+}
 func (s *flowStore) Update(ctx context.Context, uid, id string, version int, value *service.Itinerary) error {
 	if version != s.trip.Version {
 		return service.Conflict()
@@ -86,11 +97,23 @@ func (flowTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	switch {
 	case strings.HasSuffix(r.URL.Path, "places:autocomplete"):
 		data = map[string]any{"suggestions": []any{map[string]any{"placePrediction": map[string]any{"placeId": "p1", "structuredFormat": map[string]any{"mainText": map[string]string{"text": "公園"}, "secondaryText": map[string]string{"text": "東京都"}}}}}}
+	case strings.HasSuffix(r.URL.Path, "places:searchNearby"):
+		data = map[string]any{"places": []any{
+			map[string]any{"id": "near", "displayName": map[string]string{"text": "山あいの駅"}, "location": map[string]float64{"latitude": 35.001, "longitude": 139}, "primaryTypeDisplayName": map[string]string{"text": "駅"}},
+			map[string]any{"id": "far", "displayName": map[string]string{"text": "遠くの駅"}, "location": map[string]float64{"latitude": 36, "longitude": 139}},
+		}}
 	case strings.HasSuffix(r.URL.Path, "places:searchText"):
 		data = map[string]any{"places": []any{map[string]any{"id": "p3", "displayName": map[string]string{"text": "公園3"}, "location": map[string]int{"latitude": 35, "longitude": 139}}}}
 	case strings.HasPrefix(r.URL.Path, "/v1/places/"):
 		id := strings.TrimPrefix(r.URL.Path, "/v1/places/")
-		data = map[string]any{"id": id, "displayName": map[string]string{"text": id}, "location": map[string]int{"latitude": 35, "longitude": 139}}
+		place := map[string]any{"id": id, "displayName": map[string]string{"text": id}, "location": map[string]int{"latitude": 35, "longitude": 139}}
+		if id == "onsen" {
+			// 土曜（day 6）だけ 10:00〜21:00 に営業する温泉
+			place["primaryTypeDisplayName"] = map[string]string{"text": "温泉"}
+			place["priceRange"] = map[string]any{"startPrice": map[string]string{"currencyCode": "JPY", "units": "600"}}
+			place["regularOpeningHours"] = map[string]any{"periods": []any{map[string]any{"open": map[string]int{"day": 6, "hour": 10}, "close": map[string]int{"day": 6, "hour": 21}}}}
+		}
+		data = place
 	case strings.Contains(r.URL.Path, "computeRoutes"):
 		data = map[string]any{"routes": []any{map[string]string{"duration": "600s"}}}
 	case strings.Contains(r.URL.Path, "generateContent"):
@@ -246,4 +269,35 @@ func TestAPIFlow(t *testing.T) {
 	if trip.Date != "2026-11-21" || trip.Items[0].Status != "upcoming" || trip.End.ArriveBy != "18:00" || trip.End.Name != "p1" || trip.ExpiresAt != "2026-12-21T00:00:00+09:00" {
 		t.Fatalf("%+v", trip)
 	}
+	var nearby struct {
+		Places []service.NearbyPlace `json:"places"`
+	}
+	call("GET", "/places/nearby?lat=35&lng=139&radius=500", "", "", 200, &nearby)
+	if len(nearby.Places) != 1 || nearby.Places[0].TypeLabel != "駅" {
+		t.Fatalf("%+v", nearby)
+	}
+	var detail service.PlaceDetail
+	call("GET", "/places/onsen?date=2026-11-14", "", "", 200, &detail)
+	if detail.TypeLabel != "温泉" || detail.OpeningHours == nil || detail.OpeningHours.ClosesAt != "21:00" || detail.Price.Amount == nil || *detail.Price.Amount != 600 {
+		t.Fatalf("%+v", detail)
+	}
+	call("GET", "/places/onsen?date=2026-11-15", "", "", 200, &detail)
+	if detail.OpeningHours != nil {
+		t.Fatalf("closed day: %+v", detail.OpeningHours)
+	}
+	version := strconv.Itoa(trip.Version)
+	call("PATCH", "/itineraries/trip", `{"title":"山あいの温泉町めぐり"}`, version, 200, &trip)
+	if trip.Title != "山あいの温泉町めぐり" || strconv.Itoa(trip.Version) == version {
+		t.Fatalf("%+v", trip)
+	}
+	var copied service.Itinerary
+	store.count = service.MaxItineraries
+	call("POST", "/itineraries/trip/copy", `{"date":"2026-12-12"}`, "", 422, nil)
+	store.count = 0
+	call("POST", "/itineraries/trip/copy", `{"date":"2026-12-12"}`, "", 201, &copied)
+	if copied.Date != "2026-12-12" || copied.Title != trip.Title || len(copied.Items) != len(trip.Items) || copied.Items[0].Status != "upcoming" || copied.End.ArriveBy != trip.End.ArriveBy || copied.Version != 1 {
+		t.Fatalf("%+v", copied)
+	}
+	call("DELETE", "/itineraries/trip", "", "1", 204, nil)
+	call("GET", "/itineraries/trip", "", "", 404, nil)
 }

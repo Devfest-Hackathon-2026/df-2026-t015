@@ -438,3 +438,60 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 	}
 	return result, nil
 }
+
+// ValidateTitle は旅程名（1〜50文字）を確認する。PATCH /itineraries/:id と POST /itineraries/:id/copy で使う。
+func ValidateTitle(title string) error {
+	if !Text(title, 1, 50) {
+		return Invalid("title は1〜50文字で指定してください")
+	}
+	return nil
+}
+
+// Copy は旅程を date の日にコピーする（F-11）。行き先・優先度・滞在時間・出発と終わりを引き継ぎ、
+// 新しい日付の営業時間と時刻表で作り直す。訪問順は元の旅程の順を使い、入りきらない行き先は dropped に入る。
+func (a *App) Copy(ctx context.Context, old Itinerary, date, title string) (Itinerary, error) {
+	if _, err := time.ParseInLocation("2006-01-02", date, JST); err != nil {
+		return Itinerary{}, Invalid("date は YYYY-MM-DD で指定してください")
+	}
+	if title == "" {
+		title = old.Title
+	}
+	departAt, err := clock(old.Start.DepartAt)
+	if err != nil {
+		return Itinerary{}, err
+	}
+	start := old.Start
+	start.DepartAt = departAt
+	end := old.End
+	end.ArriveAt = ""
+	visits := []Visit{}
+	for _, item := range old.Items {
+		visits = append(visits, Visit{PlaceID: item.PlaceID, Priority: item.Priority, StayMin: item.StayMin})
+	}
+	input := PlanInput{Title: title, Date: date, Start: start, End: end, Places: visits}
+	if _, err := At(date, start.DepartAt); err != nil {
+		return Itinerary{}, Invalid("date が不正です")
+	}
+	places, err := a.Places(ctx, visits)
+	if err != nil {
+		return Itinerary{}, err
+	}
+	next, err := a.Build(ctx, input, places, visits, BuildOptions{})
+	if err != nil {
+		return Itinerary{}, err
+	}
+	// 元の旅程で入りきらなかった行き先は、コピーでも入らなかったものとして残す。
+	present := map[string]bool{}
+	for _, item := range next.Items {
+		present[item.PlaceID] = true
+	}
+	for _, item := range next.Dropped {
+		present[item.PlaceID] = true
+	}
+	for _, item := range old.Dropped {
+		if !present[item.PlaceID] {
+			next.Dropped = append(next.Dropped, item)
+		}
+	}
+	return next, nil
+}

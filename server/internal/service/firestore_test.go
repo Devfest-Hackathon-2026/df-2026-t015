@@ -73,4 +73,16 @@ func TestFirestoreTransactions(t *testing.T) {
 	if result, err := store.Accept(ctx, "owner", trip.ID, proposal.ReplanID, "op", current.Version); err != nil || result.Version != current.Version+1 {
 		t.Fatalf("accept after explanation failure: %+v %v", result, err)
 	}
+	if err := store.Delete(ctx, "other", trip.ID, current.Version+1); err == nil || APIError(err).Status != 404 {
+		t.Fatalf("delete by another user: %v", err)
+	}
+	if err := store.Delete(ctx, "owner", trip.ID, current.Version); err == nil || APIError(err).Status != 409 {
+		t.Fatalf("delete with old version: %v", err)
+	}
+	if err := store.Delete(ctx, "owner", trip.ID, current.Version+1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Collection("replans").Doc(proposal.ReplanID).Get(ctx); err == nil {
+		t.Fatal("replan remained after deleting the itinerary")
+	}
 }

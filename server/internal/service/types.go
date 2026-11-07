@@ -228,6 +228,7 @@ type Store interface {
 	Get(context.Context, string, string) (Itinerary, error)
 	List(context.Context, string, int, string) (ItineraryPage, error)
 	Count(context.Context, string) (int, error)
+	Delete(context.Context, string, string, int) error
 	Update(context.Context, string, string, int, *Itinerary) error
 	SaveReplan(context.Context, string, *Replan) error
 	GetReplan(context.Context, string, string, string) (Replan, error)

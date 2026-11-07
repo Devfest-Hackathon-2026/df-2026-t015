@@ -131,7 +131,7 @@ func OpenAt(hours *Hours, arrival time.Time, stay int) (time.Time, *OpeningHours
 			continue
 		}
 		if period.Close == nil {
-			return arrival, &OpeningHours{OpensAt: "00:00", ClosesAt: "00:00"}, true
+			return arrival, &OpeningHours{OpensAt: "00:00", ClosesAt: "24:00"}, true
 		}
 		close := *period.Close
 		if close.Day < 0 || close.Day > 6 || close.Hour < 0 || close.Hour > 23 || close.Minute < 0 || close.Minute > 59 {
