@@ -189,3 +189,24 @@ func TestReplanWarnsWhenEndPlaceIsLate(t *testing.T) {
 		t.Fatal("input legs mutated")
 	}
 }
+
+func TestReplanReturnsAtMostFiveOptions(t *testing.T) {
+	trip := Itinerary{ID: "trip", Version: 1, Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"},
+		Items: []Item{{ItemID: "a", PlaceID: "p1", Priority: "must", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", Priority: "want", StartAt: "2026-11-14T10:10:00+09:00", EndAt: "2026-11-14T11:10:00+09:00", StayMin: 60}, {ItemID: "c", PlaceID: "p3", Priority: "optional", StartAt: "2026-11-14T11:20:00+09:00", EndAt: "2026-11-14T12:20:00+09:00", StayMin: 60}},
+		Legs:  []Leg{{FromItemID: "a", ToItemID: "b", DurationMin: 10}}}
+	// AI がスキーマを超えて4案、しかもすべて異なる案を返しても、AI の案は3案までにする。
+	ai := `{"options":[{"label":"1","placeIds":["p3","p2"]},{"label":"2","placeIds":["p3"]},{"label":"3","placeIds":["p2"]},{"label":"4","placeIds":[]}]}`
+	app := App{Maps: &Maps{HTTP: placesHTTP()}, AI: geminiReturning(ai)}
+	delay := 20
+	result, err := app.Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
+	if err != nil || len(result.Options) > MaxReplanOptions {
+		t.Fatalf("%d options: %v", len(result.Options), err)
+	}
+	counts := map[string]int{}
+	for _, option := range result.Options {
+		counts[option.Source]++
+	}
+	if counts["algorithm"] != 2 || counts["ai"] < 1 || counts["ai"] > MaxAIReplanOptions {
+		t.Fatalf("%v", counts)
+	}
+}

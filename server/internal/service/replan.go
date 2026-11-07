@@ -246,6 +246,9 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 	}
 	// Gemini の案: 近くの代替施設も使って、遅延箇所以降を組み直す。失敗してもアルゴリズムの案は返す。
 	for _, proposal := range a.aiReplanProposals(ctx, trip, prefix, future, depart) {
+		if len(result.Options) >= MaxReplanOptions {
+			break
+		}
 		if err := addOption(proposal.Visits, "ai", proposal.Label); err != nil {
 			return empty, err
 		}
@@ -258,6 +261,12 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 	}
 	return result, nil
 }
+
+// 組み直し案の件数。AI の案は最大3案（API仕様）、アルゴリズムの案（最大2案）と合わせて最大5案。
+const (
+	MaxAIReplanOptions = 3
+	MaxReplanOptions   = 5
+)
 
 // lowestPriority は外す候補の位置を返す。must しかなければ -1。
 func lowestPriority(visits []Visit) int {
@@ -336,7 +345,7 @@ func (a *App) aiReplanProposals(ctx context.Context, trip Itinerary, prefix, fut
 	}
 	schema := ObjectSchema(map[string]any{
 		"options": map[string]any{
-			"type": "array", "minItems": 1, "maxItems": 3,
+			"type": "array", "minItems": 1, "maxItems": MaxAIReplanOptions,
 			"items": ObjectSchema(map[string]any{
 				"label":    map[string]any{"type": "string"},
 				"placeIds": IDArraySchema(ids, 0, len(future)),
@@ -382,6 +391,9 @@ func (a *App) aiReplanProposals(ctx context.Context, trip Itinerary, prefix, fut
 			label = "代替案"
 		}
 		proposals = append(proposals, aiProposal{Visits: selected, Label: label})
+		if len(proposals) >= MaxAIReplanOptions {
+			break
+		}
 	}
 	return proposals
 }
