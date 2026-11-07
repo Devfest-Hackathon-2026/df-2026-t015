@@ -18,6 +18,7 @@ type flowStore struct {
 	service.Store
 	trip     service.Itinerary
 	proposal service.Replan
+	count    int
 }
 
 func (s *flowStore) Allow(context.Context, string) error { return nil }
@@ -33,9 +34,10 @@ func (s *flowStore) Get(ctx context.Context, uid, id string) (service.Itinerary,
 	}
 	return s.trip, nil
 }
-func (s *flowStore) List(context.Context, string) ([]service.ItineraryEntry, error) {
-	return []service.ItineraryEntry{{ID: s.trip.ID}}, nil
+func (s *flowStore) List(context.Context, string, int, string) (service.ItineraryPage, error) {
+	return service.ItineraryPage{Itineraries: []service.ItineraryEntry{{ID: s.trip.ID}}}, nil
 }
+func (s *flowStore) Count(context.Context, string) (int, error) { return s.count, nil }
 func (s *flowStore) Update(ctx context.Context, uid, id string, version int, value *service.Itinerary) error {
 	if version != s.trip.Version {
 		return service.Conflict()
@@ -169,11 +171,22 @@ func TestAPIFlow(t *testing.T) {
 	call("GET", "/places/autocomplete?q=公", "", "", 200, nil)
 	call("POST", "/places/interpret", `{"text":"公園を散歩したい"}`, "", 200, nil)
 	var trip service.Itinerary
-	call("POST", "/itineraries", `{"title":"旅","date":"2026-11-14","start":{"placeId":"start","departAt":"09:00"},"endBy":"17:00","places":[{"placeId":"p1","priority":"must","stayMin":60},{"placeId":"p2","priority":"want","stayMin":60}]}`, "", 201, &trip)
-	if len(trip.Items) != 2 {
+	// 地図で選んだ施設ではない地点も出発地・終わる場所にできる。
+	var mapTrip service.Itinerary
+	call("POST", "/itineraries", `{"title":"旅","date":"2026-11-14","start":{"placeId":null,"location":{"lat":35,"lng":139},"name":"駅前広場","departAt":"09:00"},"end":{"location":{"lat":35,"lng":139},"name":"駅前広場","arriveBy":"17:00"},"places":[{"placeId":"p1","priority":"must","stayMin":60}]}`, "", 201, &mapTrip)
+	if mapTrip.Start.PlaceID != nil || mapTrip.Start.Name != "駅前広場" || mapTrip.End.Location == nil {
+		t.Fatalf("%+v", mapTrip)
+	}
+	call("POST", "/itineraries", `{"title":"旅","date":"2026-11-14","start":{"placeId":"start","departAt":"09:00"},"end":{"placeId":"start","arriveBy":"09:05"},"places":[{"placeId":"p1","priority":"must","stayMin":60}]}`, "", 422, nil)
+	create := `{"title":"旅","date":"2026-11-14","start":{"placeId":"start","departAt":"09:00"},"end":{"placeId":"start","arriveBy":"17:00"},"places":[{"placeId":"p1","priority":"must","stayMin":60},{"placeId":"p2","priority":"want","stayMin":60}]}`
+	store.count = service.MaxItineraries
+	call("POST", "/itineraries", create, "", 422, nil)
+	store.count = 0
+	call("POST", "/itineraries", create, "", 201, &trip)
+	if len(trip.Items) != 2 || len(trip.Legs) != 3 || trip.Legs[2].ToItemID != "end" || trip.End.Name != "start" || trip.End.ArriveAt != "2026-11-14T11:30:00+09:00" || trip.Summary.EndAt != trip.End.ArriveAt {
 		t.Fatalf("%+v", trip)
 	}
-	call("GET", "/me/itineraries", "", "", 200, nil)
+	call("GET", "/me/itineraries?limit=5", "", "", 200, nil)
 	call("GET", "/itineraries/trip", "", "", 200, nil)
 	call("PUT", "/itineraries/trip/places", `{"places":[{"placeId":"p1","priority":"must","stayMin":60},{"placeId":"p2","priority":"want","stayMin":60}]}`, "1", 200, &trip)
 	call("PUT", "/itineraries/trip/places", `{"places":[{"placeId":"p1","priority":"must","stayMin":60}]}`, "1", 409, nil)
@@ -201,8 +214,15 @@ func TestAPIFlow(t *testing.T) {
 	if !reflect.DeepEqual(trip.Items[0], current) {
 		t.Fatalf("editing rewrote current item: before=%+v after=%+v", current, trip.Items[0])
 	}
+	changeEnd, _ := json.Marshal(map[string]any{"end": map[string]any{"placeId": "p2", "arriveBy": "17:30"}, "places": visits})
+	call("PUT", "/itineraries/trip/places", string(changeEnd), "4", 200, &trip)
+	if trip.End.Name != "p2" || trip.End.ArriveBy != "17:30" || trip.Version != 5 {
+		t.Fatalf("end not updated after start: %+v", trip.End)
+	}
+	changeStart, _ := json.Marshal(map[string]any{"start": map[string]any{"placeId": "p2", "departAt": "09:00"}, "places": visits})
+	call("PUT", "/itineraries/trip/places", string(changeStart), "5", 400, nil)
 	removeCurrent, _ := json.Marshal(map[string]any{"places": visits[1:]})
-	call("PUT", "/itineraries/trip/places", string(removeCurrent), "4", 400, nil)
+	call("PUT", "/itineraries/trip/places", string(removeCurrent), "5", 400, nil)
 	after := trip.Items[len(trip.Items)-1].ItemID
 	var suggestions struct {
 		Suggestions []service.Suggestion `json:"suggestions"`
@@ -212,8 +232,18 @@ func TestAPIFlow(t *testing.T) {
 		t.Fatalf("%+v", suggestions)
 	}
 	add, _ := json.Marshal(service.AddInput{PlaceID: "p3", Priority: "optional", StayMin: 30, InsertAfterItemID: after})
-	call("POST", "/itineraries/trip/items", string(add), "4", 200, &trip)
-	if len(trip.Items) != 3 || trip.Version != 5 {
+	call("POST", "/itineraries/trip/items", string(add), "5", 200, &trip)
+	if len(trip.Items) != 3 || trip.Version != 6 || trip.Legs[len(trip.Legs)-1].ToItemID != "end" || trip.Legs[len(trip.Legs)-1].FromItemID != trip.Items[2].ItemID {
+		t.Fatalf("%+v", trip)
+	}
+	// 旅行日を変えると、滞在中の予定も含めて作り直す。
+	visits = []service.Visit{}
+	for _, item := range trip.Items {
+		visits = append(visits, service.Visit{PlaceID: item.PlaceID, Priority: item.Priority, StayMin: item.StayMin})
+	}
+	moved, _ := json.Marshal(map[string]any{"date": "2026-11-21", "end": map[string]any{"placeId": "p1", "arriveBy": "18:00"}, "places": visits})
+	call("PUT", "/itineraries/trip/places", string(moved), "6", 200, &trip)
+	if trip.Date != "2026-11-21" || trip.Items[0].Status != "upcoming" || trip.End.ArriveBy != "18:00" || trip.End.Name != "p1" || trip.ExpiresAt != "2026-12-21T00:00:00+09:00" {
 		t.Fatalf("%+v", trip)
 	}
 }

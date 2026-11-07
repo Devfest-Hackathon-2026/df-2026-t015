@@ -13,31 +13,57 @@ type AddInput struct {
 	InsertAfterItemID string `json:"insertAfterItemId"`
 }
 
+func placeRef(id string) *string { return &id }
+
+// clock は RFC3339 の日時を日本時間の HH:mm にする。
+func clock(value string) (string, error) {
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return "", Upstream()
+	}
+	return t.In(JST).Format("15:04"), nil
+}
+
+// suffix は prefix の予定を残し、最後の予定（なければ出発地）から visits を組み直す。
 func (a *App) suffix(ctx context.Context, old Itinerary, prefix []Item, depart time.Time, visits []Visit, drop bool) (Itinerary, error) {
 	start := old.Start
 	if len(prefix) > 0 {
-		start.PlaceID = prefix[len(prefix)-1].PlaceID
-		start.Name = prefix[len(prefix)-1].Name
+		last := prefix[len(prefix)-1]
+		start = Start{PlaceID: placeRef(last.PlaceID), Name: last.Name}
 	}
 	start.DepartAt = depart.In(JST).Format("15:04")
-	input := PlanInput{Title: old.Title, Date: old.Date, Start: start, EndBy: old.EndBy, Places: visits}
-	places, err := a.Places(ctx, visits, start.PlaceID)
+	end := old.End
+	end.ArriveAt = ""
+	input := PlanInput{Title: old.Title, Date: old.Date, Start: start, End: end, Places: visits}
+	// 終わる場所が placeId だけで渡された（編集で変えた）ときは、施設情報から名前と座標を入れる。
+	var endID *string
+	if end.PlaceID != nil && (end.Name == "" || end.Location == nil) {
+		endID = end.PlaceID
+	}
+	places, err := a.Places(ctx, visits, start.PlaceID, endID)
 	if err != nil {
 		return Itinerary{}, err
+	}
+	if endID != nil {
+		place := places[*endID]
+		location := place.Location
+		input.End.Name, input.End.Location = place.Name, &location
 	}
 	var next Itinerary
 	if drop {
-		next, err = a.Build(ctx, input, places, visits, true)
+		next, err = a.Build(ctx, input, places, visits, BuildOptions{DropMust: true, LateEnd: true})
 	} else {
-		next, err = a.schedule(ctx, input, places, visits, map[string]Leg{})
+		next, err = a.schedule(ctx, input, places, visits, map[string]Leg{}, false)
 	}
 	if err != nil {
 		return Itinerary{}, err
 	}
-	return joinPrefix(old, prefix, next), nil
+	return joinPrefix(old, prefix, next, old.Start), nil
 }
 
-func joinPrefix(old Itinerary, prefix []Item, next Itinerary) Itinerary {
+// joinPrefix は残す予定（prefix）と組み直した後半（next）をつなぐ。
+// next.End（終わる場所に着く時刻）と start（旅程の出発地）を結果に使う。
+func joinPrefix(old Itinerary, prefix []Item, next Itinerary, start Start) Itinerary {
 	ReuseItems(old, &next)
 	if len(prefix) > 0 && len(next.Legs) > 0 {
 		next.Legs[0].FromItemID = prefix[len(prefix)-1].ItemID
@@ -68,36 +94,108 @@ func joinPrefix(old Itinerary, prefix []Item, next Itinerary) Itinerary {
 	next.Dropped = dropped
 	next.ID = old.ID
 	next.Version = old.Version
-	next.Start = old.Start
-	next.ExpiresAt = old.ExpiresAt
+	next.Title = old.Title
+	next.Start = start
+	if next.ExpiresAt == "" {
+		next.ExpiresAt = old.ExpiresAt
+	}
 	summarize(&next)
 	return next
 }
 
-func (a *App) Edit(ctx context.Context, old Itinerary, visits []Visit, endBy string) (Itinerary, error) {
-	if len(visits) < 1 || len(visits) > 10 {
-		return Itinerary{}, Invalid("places は1〜10件で指定してください")
+func sameStart(a, b Start) bool {
+	return a.Waypoint().Key() == b.Waypoint().Key() && a.DepartAt == b.DepartAt
+}
+
+// Edit は PUT /itineraries/:id/places の再生成を行う。
+// 旅行日を変えると旅程全体を作り直す。同じ日のままなら完了済み・滞在中の予定を固定し、残りだけを作り直す。
+func (a *App) Edit(ctx context.Context, old Itinerary, input EditInput) (Itinerary, error) {
+	if err := ValidateVisits(input.Places); err != nil {
+		return Itinerary{}, err
 	}
-	if endBy == "" {
-		endBy = old.EndBy
+	date := old.Date
+	if input.Date != nil {
+		date = *input.Date
 	}
+	start := old.Start
+	departAt, err := clock(old.Start.DepartAt)
+	if err != nil {
+		return Itinerary{}, err
+	}
+	start.DepartAt = departAt
+	if input.Start != nil {
+		start = *input.Start
+	}
+	end := old.End
+	end.ArriveAt = ""
+	if input.End != nil {
+		end = *input.End
+		end.ArriveAt = ""
+	}
+	// 施設で指定された出発地・終わる場所は、作り直すときに施設情報から名前と座標を入れ直す。
+	if start.PlaceID != nil {
+		start.Name, start.Location = "", nil
+	}
+	if end.PlaceID != nil {
+		end.Name, end.Location = "", nil
+	}
+	allowed := map[string]bool{}
+	for _, visit := range input.Places {
+		allowed[visit.PlaceID] = true
+	}
+	kept := []Dropped{}
+	for _, item := range old.Dropped {
+		if allowed[item.PlaceID] {
+			kept = append(kept, item)
+		}
+	}
+	old.Dropped = kept
+
+	if date != old.Date {
+		plan := PlanInput{Title: old.Title, Date: date, Start: start, End: end, Places: input.Places}
+		next, err := a.Plan(ctx, plan)
+		if err != nil {
+			return Itinerary{}, err
+		}
+		ReuseItems(old, &next)
+		for i := range next.Items {
+			next.Items[i].Status = "upcoming"
+		}
+		next.ID, next.Version = old.ID, old.Version
+		return next, nil
+	}
+
 	count := 0
 	for i, item := range old.Items {
 		if item.Status == "done" || item.Status == "current" {
 			count = i + 1
 		}
 	}
+	if count == 0 {
+		plan := PlanInput{Title: old.Title, Date: date, Start: start, End: end, Places: input.Places}
+		next, err := a.Plan(ctx, plan)
+		if err != nil {
+			return Itinerary{}, err
+		}
+		return joinPrefix(old, nil, next, next.Start), nil
+	}
+
+	if input.Start != nil {
+		current := old.Start
+		current.DepartAt = departAt
+		if !sameStart(current, *input.Start) {
+			return Itinerary{}, Invalid("旅程の開始後は出発地・出発時刻を変更できません")
+		}
+	}
+	if _, err := ValidateEnd(date, end); err != nil {
+		return Itinerary{}, err
+	}
 	fixed := map[string]Item{}
 	for _, item := range old.Items[:count] {
 		fixed[item.PlaceID] = item
 	}
 	remaining := []Visit{}
-	seen := map[string]bool{}
-	for _, visit := range visits {
-		if seen[visit.PlaceID] {
-			return Itinerary{}, Invalid("施設IDが重複しています")
-		}
-		seen[visit.PlaceID] = true
+	for _, visit := range input.Places {
 		if item, ok := fixed[visit.PlaceID]; ok {
 			if visit.Priority != item.Priority || visit.StayMin != item.StayMin {
 				return Itinerary{}, Invalid("完了済み・滞在中の予定は変更できません")
@@ -110,49 +208,32 @@ func (a *App) Edit(ctx context.Context, old Itinerary, visits []Visit, endBy str
 	if len(fixed) > 0 {
 		return Itinerary{}, Invalid("完了済み・滞在中の予定は削除できません")
 	}
-	depart, err := time.Parse(time.RFC3339, old.Start.DepartAt)
+	last := old.Items[count-1]
+	depart, err := time.Parse(time.RFC3339, last.EndAt)
 	if err != nil {
 		return Itinerary{}, Upstream()
 	}
-	start := old.Start
-	if count > 0 {
-		last := old.Items[count-1]
-		depart, err = time.Parse(time.RFC3339, last.EndAt)
-		if err != nil {
-			return Itinerary{}, Upstream()
-		}
-		start.PlaceID = last.PlaceID
-		start.Name = last.Name
-		end, err := At(old.Date, endBy)
-		if err != nil {
-			return Itinerary{}, Invalid("endBy が不正です")
-		}
-		if end.Before(depart) {
-			return Itinerary{}, infeasible(last.PlaceID)
-		}
-	}
-	old.EndBy = endBy
+	old.End = end
 	if len(remaining) == 0 {
-		next := old
-		next.Items = []Item{}
-		next.Legs = []Leg{}
-		next.Dropped = []Dropped{}
-		return joinPrefix(old, old.Items[:count], next), nil
+		return a.suffix(ctx, old, old.Items[:count], depart, nil, false)
 	}
-	start.DepartAt = depart.In(JST).Format("15:04")
-	input := PlanInput{Title: old.Title, Date: old.Date, Start: start, EndBy: endBy, Places: remaining}
-	next, err := a.Plan(ctx, input)
+	plan := PlanInput{Title: old.Title, Date: date, Start: Start{PlaceID: placeRef(last.PlaceID), Name: last.Name, DepartAt: depart.In(JST).Format("15:04")}, End: end, Places: remaining}
+	next, err := a.Plan(ctx, plan)
 	if err != nil {
 		return Itinerary{}, err
 	}
-	return joinPrefix(old, old.Items[:count], next), nil
+	return joinPrefix(old, old.Items[:count], next, old.Start), nil
 }
 
+// Add は施設を insertAfterItemId の後ろに追加する。insertAfterItemId が空なら最後の予定の後ろに追加する。
 func (a *App) Add(ctx context.Context, old Itinerary, input AddInput) (Itinerary, error) {
 	if len(old.Items) >= 10 {
 		return Itinerary{}, Invalid("予定は最大10件です")
 	}
 	index := -1
+	if input.InsertAfterItemID == "" {
+		index = len(old.Items) - 1
+	}
 	for i, item := range old.Items {
 		if item.PlaceID == input.PlaceID {
 			return Itinerary{}, Invalid("同じ施設は追加できません")
@@ -161,7 +242,7 @@ func (a *App) Add(ctx context.Context, old Itinerary, input AddInput) (Itinerary
 			index = i
 		}
 	}
-	if index < 0 && input.InsertAfterItemID != "start" {
+	if index < 0 && input.InsertAfterItemID != "start" && input.InsertAfterItemID != "" {
 		return Itinerary{}, Invalid("insertAfterItemId が不正です")
 	}
 	for i, item := range old.Items {
@@ -184,6 +265,18 @@ func (a *App) Add(ctx context.Context, old Itinerary, input AddInput) (Itinerary
 		visits = append(visits, Visit{PlaceID: item.PlaceID, Priority: item.Priority, StayMin: item.StayMin})
 	}
 	return a.suffix(ctx, old, old.Items[:index+1], depart, visits, false)
+}
+
+// locate は地点の座標を返す。施設なら Places Details で取得する。
+func (a *App) locate(ctx context.Context, point Waypoint) (Point, error) {
+	if point.PlaceID == "" {
+		return point.Location, nil
+	}
+	place, err := a.Maps.Details(ctx, point.PlaceID)
+	if err != nil {
+		return Point{}, err
+	}
+	return place.Location, nil
 }
 
 type Suggestion struct {
@@ -219,23 +312,26 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 	if after != "" && after != "start" && index < 0 {
 		return nil, Invalid("afterItemId が不正です")
 	}
-	previous := trip.Start.PlaceID
+	previous := trip.Start.Waypoint()
 	earliest, err := time.Parse(time.RFC3339, trip.Start.DepartAt)
 	if err != nil {
 		return nil, Upstream()
 	}
 	if index >= 0 {
-		previous = trip.Items[index].PlaceID
+		previous = Waypoint{PlaceID: trip.Items[index].PlaceID}
 		earliest, err = time.Parse(time.RFC3339, trip.Items[index].EndAt)
 		if err != nil {
 			return nil, Upstream()
 		}
 	}
-	latest, err := At(trip.Date, trip.EndBy)
+	// 次の予定がなければ、終わる場所に着きたい時刻までが空き時間になる。
+	next := trip.End.Waypoint()
+	latest, err := At(trip.Date, trip.End.ArriveBy)
 	if err != nil {
 		return nil, Upstream()
 	}
 	if index+1 < len(trip.Items) {
+		next = Waypoint{PlaceID: trip.Items[index+1].PlaceID}
 		latest, err = time.Parse(time.RFC3339, trip.Items[index+1].StartAt)
 		if err != nil {
 			return nil, Upstream()
@@ -244,16 +340,21 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 	if from.Before(earliest) || to.After(latest) {
 		return nil, Invalid("指定した時間帯は空き時間ではありません")
 	}
-	origin, err := a.Maps.Details(ctx, previous)
+	origin, err := a.locate(ctx, previous)
 	if err != nil {
 		return nil, err
 	}
-	places, err := a.Maps.Search(ctx, "短時間で立ち寄れる観光スポット、公園、カフェ", &origin.Location)
+	places, err := a.Maps.Search(ctx, "短時間で立ち寄れる観光スポット、公園、カフェ", &origin)
 	if err != nil {
 		return nil, err
 	}
 	byID := map[string]Place{}
-	existing := map[string]bool{trip.Start.PlaceID: true}
+	existing := map[string]bool{}
+	for _, id := range []*string{trip.Start.PlaceID, trip.End.PlaceID} {
+		if id != nil {
+			existing[*id] = true
+		}
+	}
 	for _, item := range trip.Items {
 		existing[item.PlaceID] = true
 	}
@@ -299,7 +400,7 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 			return nil, Upstream()
 		}
 		seen[selected.PlaceID] = true
-		leg, err := a.Maps.Route(ctx, previous, place.PlaceID, from)
+		leg, err := a.Maps.Route(ctx, previous, Waypoint{PlaceID: place.PlaceID}, from)
 		if err != nil {
 			return nil, err
 		}
@@ -315,18 +416,17 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 		if finish.After(to) {
 			continue
 		}
-		if index+1 < len(trip.Items) {
-			next, err := a.Maps.Route(ctx, place.PlaceID, trip.Items[index+1].PlaceID, finish)
-			if err != nil {
-				return nil, err
-			}
-			arrival, err := time.Parse(time.RFC3339, next.ArriveAt)
-			if err != nil {
-				return nil, Upstream()
-			}
-			if arrival.After(to) {
-				continue
-			}
+		// 次の予定（最後なら終わる場所）へ、空き時間の終わりまでに着けるものだけを返す。
+		onward, err := a.Maps.Route(ctx, Waypoint{PlaceID: place.PlaceID}, next, finish)
+		if err != nil {
+			return nil, err
+		}
+		arrival, err = time.Parse(time.RFC3339, onward.ArriveAt)
+		if err != nil {
+			return nil, Upstream()
+		}
+		if arrival.After(to) {
+			continue
 		}
 		suggestion := Suggestion{Place: place, Reason: selected.Reason, StayMin: selected.StayMin, Price: Price{Kind: "unknown"}, InsertAfterItemID: "start"}
 		if index >= 0 {

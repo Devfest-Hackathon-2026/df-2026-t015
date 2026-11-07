@@ -79,3 +79,15 @@ Firebase・Maps・Geminiに実際に接続する方式は利用者が選択済�
 - Firestoreのルール・TTL・必要なインデックス設定と、環境変数・起動手順はREADMEに記載する。
 - 適切なタイムアウト、モデル名の設定方法、Mapsの移動モード選択、ファイル分割は実装時に最小構成で決める。
 - 訪問順の最適解を保証する最適化ソルバーは追加しない。成立を検証できた案だけを返す。
+
+## 2026-11-06 の仕様改訂への対応（b_modify-api）
+
+API仕様が「複数の旅程、出発と終わり、地図からの選択」をテーマに改訂された（F-01〜F-11）。既存の #1〜#11 を次のように合わせる。#12〜#16 の追加は別ブランチで行う。
+
+- 共通: `endBy` を廃止し、`end`（placeId | null、name、location、arriveBy、arriveAt）を追加。`start` も placeId の代わりに location と name で指定できる。終わる場所への移動を最後の Leg（toItemId: "end"）として計算し、`summary.endAt` は終わる場所に着く時刻にする。
+- エラー: 422 `END_INFEASIBLE`（行き先を外しても終わる場所に間に合わない）、422 `ITINERARY_LIMIT`（1人20件）を追加。
+- #3: 上記の入力を受け付け、作成前と保存時のトランザクション内で件数の上限を確認する。
+- #4: `limit`（1〜50、既定20）と `cursor` でページング。各旅程に start・end・placeCount・placeNames・expiresAt を返す。ownerUid + date の複合インデックスを使う。
+- #6: `date`・`start`・`end` を任意で受け付ける。date を変えたら旅程全体を作り直す。
+- #7: 終わる場所に間に合わない案には `end_at_risk` を警告する（`end_time_exceeded` は廃止）。遅延で出発が遅れる移動の時刻もずらす。
+- #10・#11: 最後の予定の後は終わる場所までの移動を含めて判定する。#11 の insertAfterItemId は省略すると末尾に追加する。

@@ -108,6 +108,19 @@ func Changes(old, next Itinerary) []Change {
 	return changes
 }
 
+// shiftLegFrom は itemID から出る移動を depart 出発に合わせてずらす（遅延で出発が遅れた場合）。
+func shiftLegFrom(legs []Leg, itemID string, depart time.Time) []Leg {
+	shifted := append([]Leg{}, legs...)
+	for i, leg := range shifted {
+		if leg.FromItemID != itemID {
+			continue
+		}
+		shifted[i].DepartAt = depart.Format(time.RFC3339)
+		shifted[i].ArriveAt = depart.Add(time.Duration(leg.DurationMin) * time.Minute).Format(time.RFC3339)
+	}
+	return shifted
+}
+
 func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Replan, error) {
 	empty := Replan{Warnings: []Warning{}, Options: []Option{}}
 	prefix, depart, err := DelayedPrefix(trip, input)
@@ -138,17 +151,27 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 		}
 		retimeOnly = !depart.Add(time.Duration(travel) * time.Minute).After(nextStart)
 	}
+	arriveBy, err := At(trip.Date, trip.End.ArriveBy)
+	if err != nil {
+		return empty, Upstream()
+	}
+	warnedEnd := false
+	warnEnd := func(candidate Itinerary) {
+		arrival, err := time.Parse(time.RFC3339, candidate.End.ArriveAt)
+		if err == nil && arrival.After(arriveBy) && !warnedEnd {
+			warnedEnd = true
+			result.Warnings = append(result.Warnings, Warning{Type: "end_at_risk", ItemID: prefix[index].ItemID, Message: arriveBy.Format("15:04") + " までに" + candidate.End.Name + "に戻れません"})
+		}
+	}
 	if retimeOnly {
 		candidate := trip
 		candidate.Items = append(prefix, trip.Items[index+1:]...)
+		candidate.Legs = shiftLegFrom(trip.Legs, prefix[index].ItemID, depart)
+		if last := candidate.Legs; len(last) > 0 && last[len(last)-1].ToItemID == "end" {
+			candidate.End.ArriveAt = last[len(last)-1].ArriveAt
+		}
 		summarize(&candidate)
-		end, err := At(trip.Date, trip.EndBy)
-		if err != nil {
-			return empty, Upstream()
-		}
-		if depart.After(end) {
-			result.Warnings = append(result.Warnings, Warning{Type: "end_time_exceeded", ItemID: prefix[index].ItemID, Message: "遅延後の終了時刻が終了希望時刻を超えています"})
-		}
+		warnEnd(candidate)
 		option := Option{
 			OptionID: "op_" + rand.Text(), Changes: Changes(trip, candidate),
 			SummaryBefore: trip.Summary, SummaryAfter: candidate.Summary,
@@ -195,8 +218,8 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 			}),
 		},
 	})
-	data, _ := json.Marshal(map[string]any{"remaining": future, "alternatives": verified, "departAt": depart, "endBy": trip.EndBy})
-	prompt := "遅延後の旅程の訪問順を最大3案提案してください。remaining の placeId と alternatives の placeId だけを使い、1案内で重複させないでください。mustはできる限り残してください。追加する代替施設の数は除外する元施設の数以内とし、移動を抑えてください。成立しない施設は除外できます。\n" + string(data)
+	data, _ := json.Marshal(map[string]any{"remaining": future, "alternatives": verified, "departAt": depart, "end": trip.End})
+	prompt := "遅延後の旅程の訪問順を最大3案提案してください。remaining の placeId と alternatives の placeId だけを使い、1案内で重複させないでください。mustはできる限り残してください。追加する代替施設の数は除外する元施設の数以内とし、移動を抑えてください。最後に end（終わる場所）へ end.arriveBy までに着けるようにしてください。成立しない施設は除外できます。\n" + string(data)
 	if err := a.AI.Generate(ctx, prompt, schema, &output); err != nil {
 		return empty, err
 	}
@@ -228,6 +251,7 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 		if err != nil {
 			return empty, err
 		}
+		warnEnd(candidate)
 		present := map[string]bool{}
 		dropped := map[string]bool{}
 		for _, item := range candidate.Items {

@@ -33,6 +33,7 @@ func New(app *service.App) http.Handler {
 	methods := map[string][]string{}
 	queries := map[string][]string{
 		"/places/autocomplete":                             {"q", "lat", "lng"},
+		"/me/itineraries":                                  {"limit", "cursor"},
 		"/itineraries/{id}/suggestions":                    {"from", "to", "afterItemId"},
 		"/itineraries/{id}/replans/{replanId}/explanation": {"optionId"},
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"time"
 
@@ -41,17 +40,60 @@ func ValidateVisits(visits []Visit) error {
 	return nil
 }
 
-func ValidatePlan(input PlanInput) error {
-	if !Text(input.Title, 1, 100) || !ValidID(input.Start.PlaceID) {
-		return Invalid("title または出発地が不正です")
+// MaxItineraries は1人が保存できる旅程の件数。
+const MaxItineraries = 20
+
+func validEndpoint(id *string, location *Point, name, label string) error {
+	if id != nil {
+		if !ValidID(*id) || location != nil {
+			return Invalid(label + " は placeId か location と name のどちらか一方で指定してください")
+		}
+		return nil
 	}
-	start, err := At(input.Date, input.Start.DepartAt)
+	if location == nil || !ValidPoint(*location) || !Text(name, 1, 100) {
+		return Invalid(label + " は placeId か location と name のどちらか一方で指定してください")
+	}
+	return nil
+}
+
+// ValidateStart は出発地の指定と出発時刻（HH:mm）を確認する。
+func ValidateStart(date string, start Start) (time.Time, error) {
+	if err := validEndpoint(start.PlaceID, start.Location, start.Name, "start"); err != nil {
+		return time.Time{}, err
+	}
+	value, err := At(date, start.DepartAt)
 	if err != nil {
-		return Invalid("date / start.departAt が不正です")
+		return time.Time{}, Invalid("date / start.departAt が不正です")
 	}
-	end, err := At(input.Date, input.EndBy)
-	if err != nil || !end.After(start) {
-		return Invalid("endBy は出発後の同日内の時刻を指定してください")
+	return value, nil
+}
+
+// ValidateEnd は終わる場所の指定と着きたい時刻（HH:mm）を確認する。
+func ValidateEnd(date string, end End) (time.Time, error) {
+	if err := validEndpoint(end.PlaceID, end.Location, end.Name, "end"); err != nil {
+		return time.Time{}, err
+	}
+	value, err := At(date, end.ArriveBy)
+	if err != nil {
+		return time.Time{}, Invalid("end.arriveBy が不正です")
+	}
+	return value, nil
+}
+
+func ValidatePlan(input PlanInput) error {
+	if !Text(input.Title, 1, 100) {
+		return Invalid("title が不正です")
+	}
+	start, err := ValidateStart(input.Date, input.Start)
+	if err != nil {
+		return err
+	}
+	end, err := ValidateEnd(input.Date, input.End)
+	if err != nil {
+		return err
+	}
+	if !end.After(start) {
+		return Invalid("end.arriveBy は出発後の同日内の時刻を指定してください")
 	}
 	return ValidateVisits(input.Places)
 }
@@ -119,14 +161,23 @@ func OpenAt(hours *Hours, arrival time.Time, stay int) (time.Time, *OpeningHours
 	return best, window, !best.IsZero()
 }
 
-func (a *App) Places(ctx context.Context, visits []Visit, startID string) (map[string]Place, error) {
+// Places は行き先と、placeId で指定された出発地・終わる場所の施設情報を取得する。
+func (a *App) Places(ctx context.Context, visits []Visit, endpoints ...*string) (map[string]Place, error) {
 	ids := []string{}
 	seen := map[string]bool{}
-	for _, visit := range append([]Visit{{PlaceID: startID}}, visits...) {
-		if !seen[visit.PlaceID] {
-			seen[visit.PlaceID] = true
-			ids = append(ids, visit.PlaceID)
+	add := func(id string) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
 		}
+	}
+	for _, id := range endpoints {
+		if id != nil {
+			add(*id)
+		}
+	}
+	for _, visit := range visits {
+		add(visit.PlaceID)
 	}
 	values := make([]Place, len(ids))
 	group, ctx := errgroup.WithContext(ctx)
@@ -144,19 +195,34 @@ func (a *App) Places(ctx context.Context, visits []Visit, startID string) (map[s
 	return places, nil
 }
 
+// fillEndpoints は placeId で指定された出発地・終わる場所に名前と座標を入れる。
+func fillEndpoints(input *PlanInput, places map[string]Place) {
+	if id := input.Start.PlaceID; id != nil {
+		place := places[*id]
+		location := place.Location
+		input.Start.Name, input.Start.Location = place.Name, &location
+	}
+	if id := input.End.PlaceID; id != nil {
+		place := places[*id]
+		location := place.Location
+		input.End.Name, input.End.Location = place.Name, &location
+	}
+}
+
 func (a *App) Plan(ctx context.Context, input PlanInput) (Itinerary, error) {
 	if err := ValidatePlan(input); err != nil {
 		return Itinerary{}, err
 	}
-	places, err := a.Places(ctx, input.Places, input.Start.PlaceID)
+	places, err := a.Places(ctx, input.Places, input.Start.PlaceID, input.End.PlaceID)
 	if err != nil {
 		return Itinerary{}, err
 	}
+	fillEndpoints(&input, places)
 	data, _ := json.Marshal(map[string]any{"request": input, "verifiedPlaces": places})
 	var output struct {
 		PlaceIDs []string `json:"placeIds"`
 	}
-	err = a.AI.Generate(ctx, "次の行き先をすべて1回ずつ訪問する順番を提案してください。必須の施設の成立を優先し、移動を抑えてください。placeIds に入力の全施設IDを重複なく入れてください。\n"+string(data), ObjectSchema(map[string]any{"placeIds": StringArraySchema()}), &output)
+	err = a.AI.Generate(ctx, "次の行き先をすべて1回ずつ訪問する順番を提案してください。必須の施設の成立を優先し、移動を抑えてください。最後に終わる場所（request.end）へ移動することも考慮してください。placeIds に入力の全施設IDを重複なく入れてください。\n"+string(data), ObjectSchema(map[string]any{"placeIds": StringArraySchema()}), &output)
 	if err != nil {
 		return Itinerary{}, err
 	}
@@ -164,13 +230,22 @@ func (a *App) Plan(ctx context.Context, input PlanInput) (Itinerary, error) {
 	if err != nil {
 		return Itinerary{}, err
 	}
-	input.Start.Name = places[input.Start.PlaceID].Name
-	return a.Build(ctx, input, places, ordered, false)
+	return a.Build(ctx, input, places, ordered, BuildOptions{})
 }
 
-func infeasible(id string) *Error {
-	err := Fail(422, "MUST_ITEMS_INFEASIBLE", "営業時間や終了希望時刻に予定が入りません")
-	err.Details["placeIds"] = []string{id}
+func infeasible(ids ...string) *Error {
+	err := Fail(422, "MUST_ITEMS_INFEASIBLE", "営業時間や終わる場所に着きたい時刻までに、必須の予定が入りません")
+	err.Details["placeIds"] = ids
+	return err
+}
+
+func endInfeasible() *Error {
+	return Fail(422, "END_INFEASIBLE", "行き先を外しても、終わる場所に着きたい時刻までに着けません")
+}
+
+func ItineraryLimit() *Error {
+	err := Fail(422, "ITINERARY_LIMIT", "保存できる旅程の上限（1人20件）を超えます")
+	err.Details["limit"] = MaxItineraries
 	return err
 }
 
@@ -188,42 +263,57 @@ func summarize(value *Itinerary) {
 			value.Summary.PriceTotal.HasEstimate = true
 		}
 	}
+	if value.End.ArriveAt != "" {
+		value.Summary.EndAt = value.End.ArriveAt
+	}
 }
 
-func (a *App) schedule(ctx context.Context, input PlanInput, places map[string]Place, visits []Visit, cache map[string]Leg) (Itinerary, error) {
+func (a *App) route(ctx context.Context, cache map[string]Leg, from, to Waypoint, depart time.Time) (Leg, error) {
+	key := from.Key() + "/" + to.Key() + "/" + depart.Format(time.RFC3339)
+	if leg, ok := cache[key]; ok {
+		return leg, nil
+	}
+	leg, err := a.Maps.Route(ctx, from, to, depart)
+	if err != nil {
+		return Leg{}, err
+	}
+	if cache != nil {
+		cache[key] = leg
+	}
+	return leg, nil
+}
+
+// schedule は訪問順どおりに時刻を計算する。終わる場所への移動も Leg（toItemId: "end"）として加え、
+// lateEnd が false のときは end.arriveBy までに着けなければ END_INFEASIBLE を返す。
+func (a *App) schedule(ctx context.Context, input PlanInput, places map[string]Place, visits []Visit, cache map[string]Leg, lateEnd bool) (Itinerary, error) {
 	depart, err := At(input.Date, input.Start.DepartAt)
 	if err != nil {
 		return Itinerary{}, Invalid("出発時刻が不正です")
 	}
-	end, err := At(input.Date, input.EndBy)
+	arriveBy, err := At(input.Date, input.End.ArriveBy)
 	if err != nil {
-		return Itinerary{}, Invalid("終了希望時刻が不正です")
+		return Itinerary{}, Invalid("終わる場所に着きたい時刻が不正です")
 	}
 	day, _ := time.ParseInLocation("2006-01-02", input.Date, JST)
-	value := Itinerary{Title: input.Title, Date: input.Date, Start: input.Start, EndBy: input.EndBy, Items: []Item{}, Legs: []Leg{}, Dropped: []Dropped{}, ExpiresAt: day.AddDate(0, 0, 30).Format(time.RFC3339)}
+	value := Itinerary{Title: input.Title, Date: input.Date, Start: input.Start, End: input.End, Items: []Item{}, Legs: []Leg{}, Dropped: []Dropped{}, ExpiresAt: day.AddDate(0, 0, 30).Format(time.RFC3339)}
 	value.Start.DepartAt = depart.Format(time.RFC3339)
-	from := input.Start.PlaceID
+	from := input.Start.Waypoint()
 	fromID := "start"
 	for _, visit := range visits {
 		p, ok := places[visit.PlaceID]
 		if !ok {
 			return Itinerary{}, Upstream()
 		}
-		key := fmt.Sprintf("%s/%s/%s", from, p.PlaceID, depart.Format(time.RFC3339))
-		leg, ok := cache[key]
-		if !ok {
-			leg, err = a.Maps.Route(ctx, from, p.PlaceID, depart)
-			if err != nil {
-				return Itinerary{}, err
-			}
-			cache[key] = leg
+		leg, err := a.route(ctx, cache, from, Waypoint{PlaceID: p.PlaceID}, depart)
+		if err != nil {
+			return Itinerary{}, err
 		}
 		arrival, err := time.Parse(time.RFC3339, leg.ArriveAt)
 		if err != nil {
 			return Itinerary{}, Upstream()
 		}
 		start, hours, ok := OpenAt(p.Hours, arrival, visit.StayMin)
-		if !ok || start.Add(time.Duration(visit.StayMin)*time.Minute).After(end) {
+		if !ok || start.Add(time.Duration(visit.StayMin)*time.Minute).After(arriveBy) {
 			return Itinerary{}, infeasible(visit.PlaceID)
 		}
 		item := Item{
@@ -237,38 +327,89 @@ func (a *App) schedule(ctx context.Context, input PlanInput, places map[string]P
 		leg.ToItemID = item.ItemID
 		value.Items = append(value.Items, item)
 		value.Legs = append(value.Legs, leg)
-		from = p.PlaceID
+		from = Waypoint{PlaceID: p.PlaceID}
 		fromID = item.ItemID
 		depart = start.Add(time.Duration(visit.StayMin) * time.Minute)
 	}
+	leg, err := a.route(ctx, cache, from, input.End.Waypoint(), depart)
+	if err != nil {
+		return Itinerary{}, err
+	}
+	arrival, err := time.Parse(time.RFC3339, leg.ArriveAt)
+	if err != nil {
+		return Itinerary{}, Upstream()
+	}
+	if arrival.After(arriveBy) && !lateEnd {
+		return Itinerary{}, endInfeasible()
+	}
+	leg.FromItemID = fromID
+	leg.ToItemID = "end"
+	value.Legs = append(value.Legs, leg)
+	value.End.ArriveAt = arrival.Format(time.RFC3339)
 	summarize(&value)
 	return value, nil
 }
 
-func (a *App) Build(ctx context.Context, input PlanInput, places map[string]Place, order []Visit, allowDropMust bool) (Itinerary, error) {
+// BuildOptions は組み立て時の扱い。DropMust は必須の予定も外せる（組み直し用）、
+// LateEnd は終わる場所に間に合わない場合も行き先をすべて外した旅程を返す（組み直し用）。
+type BuildOptions struct {
+	DropMust bool
+	LateEnd  bool
+}
+
+func errorCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	return APIError(err).Code
+}
+
+func (a *App) Build(ctx context.Context, input PlanInput, places map[string]Place, order []Visit, options BuildOptions) (Itinerary, error) {
 	cache := map[string]Leg{}
 	selected := []Visit{}
 	remaining := []Visit{}
+	musts := []Visit{}
 	dropped := []Dropped{}
 	for _, visit := range order {
 		if visit.Priority == "must" {
-			selected = append(selected, visit)
+			musts = append(musts, visit)
 		} else {
 			remaining = append(remaining, visit)
 		}
 	}
-	value, err := a.schedule(ctx, input, places, selected, cache)
-	if err != nil && allowDropMust && APIError(err).Status == 422 {
-		selected = []Visit{}
-		for _, visit := range order {
-			if visit.Priority == "must" {
-				remaining = append(remaining, visit)
-			}
-		}
-		value, err = a.schedule(ctx, input, places, selected, cache)
-	}
+	selected = append(selected, musts...)
+	value, err := a.schedule(ctx, input, places, selected, cache, false)
 	if err != nil {
-		return Itinerary{}, err
+		if APIError(err).Status != 422 {
+			return Itinerary{}, err
+		}
+		base, baseErr := a.schedule(ctx, input, places, nil, cache, false)
+		switch {
+		case baseErr == nil && options.DropMust:
+			selected = []Visit{}
+			remaining = append(musts, remaining...)
+			value = base
+		case baseErr == nil && errorCode(err) == "END_INFEASIBLE":
+			ids := []string{}
+			for _, visit := range musts {
+				ids = append(ids, visit.PlaceID)
+			}
+			return Itinerary{}, infeasible(ids...)
+		case baseErr == nil:
+			return Itinerary{}, err
+		case errorCode(baseErr) == "END_INFEASIBLE" && options.LateEnd:
+			value, err = a.schedule(ctx, input, places, nil, cache, true)
+			if err != nil {
+				return Itinerary{}, err
+			}
+			for _, visit := range order {
+				dropped = append(dropped, Dropped{PlaceID: visit.PlaceID, Name: places[visit.PlaceID].Name, Reason: "終わる場所に着きたい時刻までに入りません"})
+			}
+			value.Dropped = dropped
+			return value, nil
+		default:
+			return Itinerary{}, baseErr
+		}
 	}
 	rank := map[string]int{}
 	for i, visit := range order {
@@ -281,12 +422,12 @@ func (a *App) Build(ctx context.Context, input PlanInput, places map[string]Plac
 	for _, visit := range remaining {
 		trial := append(append([]Visit{}, selected...), visit)
 		sort.SliceStable(trial, func(i, j int) bool { return rank[trial[i].PlaceID] < rank[trial[j].PlaceID] })
-		candidate, err := a.schedule(ctx, input, places, trial, cache)
+		candidate, err := a.schedule(ctx, input, places, trial, cache, false)
 		if err != nil {
 			if APIError(err).Status != 422 {
 				return Itinerary{}, err
 			}
-			dropped = append(dropped, Dropped{PlaceID: visit.PlaceID, Name: places[visit.PlaceID].Name, Reason: "営業時間や終了希望時刻に入りません"})
+			dropped = append(dropped, Dropped{PlaceID: visit.PlaceID, Name: places[visit.PlaceID].Name, Reason: "営業時間や終わる場所に着きたい時刻までに入りません"})
 			continue
 		}
 		selected = trial

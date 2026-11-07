@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+func ref(value string) *string { return &value }
+
 func TestVisitOrderRejectsInventedAndDuplicateIDs(t *testing.T) {
 	visits := []Visit{{PlaceID: "a", Priority: "must", StayMin: 60}, {PlaceID: "b", Priority: "want", StayMin: 30}}
 	for _, ids := range [][]string{{"a", "fake"}, {"a", "a"}, {"a"}} {
@@ -44,7 +46,7 @@ func TestOpeningHours(t *testing.T) {
 }
 
 func TestValidatePlan(t *testing.T) {
-	input := PlanInput{Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: "start", DepartAt: "09:00"}, EndBy: "17:00", Places: []Visit{{PlaceID: "a", Priority: "must", StayMin: 60}}}
+	input := PlanInput{Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"}, Places: []Visit{{PlaceID: "a", Priority: "must", StayMin: 60}}}
 	if err := ValidatePlan(input); err != nil {
 		t.Fatal(err)
 	}
@@ -53,9 +55,21 @@ func TestValidatePlan(t *testing.T) {
 		t.Fatal("short stay accepted")
 	}
 	input.Places[0].StayMin = 60
-	input.EndBy = "08:00"
+	input.End.ArriveBy = "08:00"
 	if err := ValidatePlan(input); err == nil {
 		t.Fatal("end before departure accepted")
+	}
+	input.End = End{Location: &Point{Lat: 35, Lng: 139}, Name: "駅前", ArriveBy: "17:00"}
+	if err := ValidatePlan(input); err != nil {
+		t.Fatalf("map point rejected: %v", err)
+	}
+	input.End.Name = ""
+	if err := ValidatePlan(input); err == nil {
+		t.Fatal("map point without name accepted")
+	}
+	input.End = End{PlaceID: ref("end"), Location: &Point{Lat: 35, Lng: 139}, ArriveBy: "17:00"}
+	if err := ValidatePlan(input); err == nil {
+		t.Fatal("both placeId and location accepted")
 	}
 }
 
@@ -67,24 +81,38 @@ func TestStrictClockFormat(t *testing.T) {
 
 func TestBuildKeepsMustBeforeOptional(t *testing.T) {
 	app := App{Maps: &Maps{HTTP: testHTTP(`{"routes":[{"duration":"600s"}]}`)}}
-	input := PlanInput{Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: "start", DepartAt: "09:00"}, EndBy: "10:20"}
+	// 移動は各10分。出発地 → must（60分）→ 終わる場所で 10:20 に着く。
+	input := PlanInput{Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "09:00"}, End: End{PlaceID: ref("end"), Name: "駅", ArriveBy: "10:20"}}
 	visits := []Visit{{PlaceID: "optional", Priority: "optional", StayMin: 60}, {PlaceID: "must", Priority: "must", StayMin: 60}}
 	places := map[string]Place{"optional": {PlaceID: "optional", Name: "optional"}, "must": {PlaceID: "must", Name: "must"}}
-	result, err := app.Build(context.Background(), input, places, visits, false)
+	result, err := app.Build(context.Background(), input, places, visits, BuildOptions{})
 	if err != nil || len(result.Items) != 1 || result.Items[0].PlaceID != "must" || len(result.Dropped) != 1 {
 		t.Fatalf("%+v %v", result, err)
 	}
-	input.EndBy = "09:30"
-	_, err = app.Build(context.Background(), input, places, visits, false)
-	if err == nil || APIError(err).Status != 422 {
+	last := result.Legs[len(result.Legs)-1]
+	if last.ToItemID != "end" || last.FromItemID != result.Items[0].ItemID || result.End.ArriveAt != "2026-11-14T10:20:00+09:00" || result.Summary.EndAt != result.End.ArriveAt {
+		t.Fatalf("leg to the end place: %+v %+v", result.Legs, result.End)
+	}
+	input.End.ArriveBy = "09:50"
+	_, err = app.Build(context.Background(), input, places, visits, BuildOptions{})
+	if APIError(err).Code != "MUST_ITEMS_INFEASIBLE" {
 		t.Fatalf("infeasible must: %v", err)
+	}
+	input.End.ArriveBy = "09:05"
+	_, err = app.Build(context.Background(), input, places, visits, BuildOptions{})
+	if APIError(err).Code != "END_INFEASIBLE" {
+		t.Fatalf("unreachable end: %v", err)
+	}
+	late, err := app.Build(context.Background(), input, places, visits, BuildOptions{DropMust: true, LateEnd: true})
+	if err != nil || len(late.Items) != 0 || len(late.Dropped) != 2 || late.End.ArriveAt != "2026-11-14T09:10:00+09:00" {
+		t.Fatalf("late end for replans: %+v %v", late, err)
 	}
 }
 
 func TestReaddedItemNoLongerDropped(t *testing.T) {
 	old := Itinerary{Dropped: []Dropped{{PlaceID: "p1", Reason: "no time"}, {PlaceID: "p2", Reason: "no time"}}}
 	next := Itinerary{Items: []Item{{ItemID: "it", PlaceID: "p1"}}, Legs: []Leg{}, Dropped: []Dropped{}}
-	value := joinPrefix(old, nil, next)
+	value := joinPrefix(old, nil, next, Start{})
 	if len(value.Dropped) != 1 || value.Dropped[0].PlaceID != "p2" {
 		t.Fatalf("included item remains dropped: %+v", value.Dropped)
 	}

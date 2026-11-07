@@ -25,8 +25,8 @@ func (s *testStore) Get(ctx context.Context, uid, id string) (service.Itinerary,
 	}
 	return s.trip, s.err
 }
-func (s *testStore) List(context.Context, string) ([]service.ItineraryEntry, error) {
-	return []service.ItineraryEntry{}, nil
+func (s *testStore) List(context.Context, string, int, string) (service.ItineraryPage, error) {
+	return service.ItineraryPage{Itineraries: []service.ItineraryEntry{}}, nil
 }
 
 func testApp() *service.App {
@@ -88,6 +88,10 @@ func TestBadRequestsDoNotCallUpstream(t *testing.T) {
 		{"POST", "/itineraries/trip/replans", `{"currentItemId":"x","delayMin":1,"now":"2026-11-05T12:00:00+09:00"}`},
 		{"POST", "/itineraries/trip/items", `{}`},
 		{"GET", "/itineraries/trip/suggestions?from=no&to=no", ""},
+		{"GET", "/me/itineraries?limit=0", ""},
+		{"GET", "/me/itineraries?limit=51", ""},
+		{"POST", "/itineraries", `{"title":"旅","date":"2026-11-14","start":{"placeId":"s","departAt":"09:00"},"endBy":"17:00","places":[{"placeId":"p1","priority":"must","stayMin":60}]}`},
+		{"POST", "/itineraries", `{"title":"旅","date":"2026-11-14","start":{"location":{"lat":35,"lng":139},"departAt":"09:00"},"end":{"placeId":"s","arriveBy":"17:00"},"places":[{"placeId":"p1","priority":"must","stayMin":60}]}`},
 	} {
 		r := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
 		r.Header.Set("Authorization", "Bearer owner")

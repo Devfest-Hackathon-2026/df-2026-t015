@@ -61,11 +61,44 @@ type Summary struct {
 	EndAt string `json:"endAt"`
 }
 
+// Start は出発地と出発時刻（Endpoint ＋ departAt）。
+// 地図で施設ではない地点を選んだときは PlaceID が nil で、Location と Name を持つ。
+// 入力の departAt は HH:mm、出力は日時。
 type Start struct {
-	PlaceID  string `json:"placeId"`
-	Name     string `json:"name,omitempty"`
-	DepartAt string `json:"departAt"`
+	PlaceID  *string `json:"placeId"`
+	Name     string  `json:"name"`
+	Location *Point  `json:"location,omitempty"`
+	DepartAt string  `json:"departAt"`
 }
+
+// End は終わる場所と時刻（Endpoint ＋ arriveBy, arriveAt）。
+// arriveBy は着きたい時刻（HH:mm）、arriveAt は着く予定の日時（出力のみ）。
+type End struct {
+	PlaceID  *string `json:"placeId"`
+	Name     string  `json:"name"`
+	Location *Point  `json:"location,omitempty"`
+	ArriveBy string  `json:"arriveBy"`
+	ArriveAt string  `json:"arriveAt,omitempty"`
+}
+
+// Waypoint は経路計算に渡す地点。施設なら PlaceID、それ以外は Location を使う。
+type Waypoint struct {
+	PlaceID  string
+	Location Point
+}
+
+func pointWaypoint(id *string, location *Point) Waypoint {
+	if id != nil && *id != "" {
+		return Waypoint{PlaceID: *id}
+	}
+	if location != nil {
+		return Waypoint{Location: *location}
+	}
+	return Waypoint{}
+}
+
+func (s Start) Waypoint() Waypoint { return pointWaypoint(s.PlaceID, s.Location) }
+func (e End) Waypoint() Waypoint   { return pointWaypoint(e.PlaceID, e.Location) }
 
 type Dropped struct {
 	PlaceID string `json:"placeId"`
@@ -79,7 +112,7 @@ type Itinerary struct {
 	Title     string    `json:"title"`
 	Date      string    `json:"date"`
 	Start     Start     `json:"start"`
-	EndBy     string    `json:"endBy"`
+	End       End       `json:"end"`
 	Items     []Item    `json:"items"`
 	Legs      []Leg     `json:"legs"`
 	Summary   Summary   `json:"summary"`
@@ -97,15 +130,44 @@ type PlanInput struct {
 	Title  string  `json:"title"`
 	Date   string  `json:"date"`
 	Start  Start   `json:"start"`
-	EndBy  string  `json:"endBy"`
+	End    End     `json:"end"`
 	Places []Visit `json:"places"`
 }
 
+// EditInput は PUT /itineraries/:id/places の入力。date・start・end は省略すると今の値のまま。
+type EditInput struct {
+	Date   *string `json:"date"`
+	Start  *Start  `json:"start"`
+	End    *End    `json:"end"`
+	Places []Visit `json:"places"`
+}
+
+type EntryStart struct {
+	Name     string `json:"name"`
+	DepartAt string `json:"departAt"`
+}
+
+type EntryEnd struct {
+	Name     string `json:"name"`
+	ArriveAt string `json:"arriveAt"`
+}
+
+// ItineraryEntry は GET /me/itineraries の1件。
 type ItineraryEntry struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Date      string `json:"date"`
-	UpdatedAt string `json:"updatedAt"`
+	ID         string     `json:"id"`
+	Title      string     `json:"title"`
+	Date       string     `json:"date"`
+	Start      EntryStart `json:"start"`
+	End        EntryEnd   `json:"end"`
+	PlaceCount int        `json:"placeCount"`
+	PlaceNames []string   `json:"placeNames"`
+	UpdatedAt  string     `json:"updatedAt"`
+	ExpiresAt  string     `json:"expiresAt"`
+}
+
+type ItineraryPage struct {
+	Itineraries []ItineraryEntry `json:"itineraries"`
+	NextCursor  *string          `json:"nextCursor"`
 }
 
 type Change struct {
@@ -164,7 +226,8 @@ type ReplanInput struct {
 type Store interface {
 	Create(context.Context, string, *Itinerary) error
 	Get(context.Context, string, string) (Itinerary, error)
-	List(context.Context, string) ([]ItineraryEntry, error)
+	List(context.Context, string, int, string) (ItineraryPage, error)
+	Count(context.Context, string) (int, error)
 	Update(context.Context, string, string, int, *Itinerary) error
 	SaveReplan(context.Context, string, *Replan) error
 	GetReplan(context.Context, string, string, string) (Replan, error)

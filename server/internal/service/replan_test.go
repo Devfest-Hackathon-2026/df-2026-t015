@@ -57,7 +57,7 @@ func TestChangesIncludeReplacementAndRetime(t *testing.T) {
 
 func TestSuggestionsRejectOccupiedWindow(t *testing.T) {
 	app := App{}
-	trip := Itinerary{Date: "2026-11-14", Start: Start{PlaceID: "start", DepartAt: "2026-11-14T09:00:00+09:00"}, EndBy: "17:00", Items: []Item{{ItemID: "a", EndAt: "2026-11-14T12:00:00+09:00"}}}
+	trip := Itinerary{Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"}, Items: []Item{{ItemID: "a", EndAt: "2026-11-14T12:00:00+09:00"}}}
 	from, _ := time.Parse(time.RFC3339, "2026-11-14T11:00:00+09:00")
 	to := from.Add(time.Hour)
 	if _, err := app.Suggest(t.Context(), trip, from, to, "a"); err == nil || APIError(err).Status != 400 {
@@ -66,7 +66,7 @@ func TestSuggestionsRejectOccupiedWindow(t *testing.T) {
 }
 
 func TestReplanRejectsMissingAIPlaceIDs(t *testing.T) {
-	trip := Itinerary{ID: "trip", Version: 1, Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: "start", DepartAt: "2026-11-14T09:00:00+09:00"}, EndBy: "17:00", Items: []Item{{ItemID: "a", PlaceID: "p1", Priority: "must", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", Priority: "want", StartAt: "2026-11-14T10:10:00+09:00", EndAt: "2026-11-14T11:10:00+09:00", StayMin: 60}}, Legs: []Leg{{ToItemID: "b", DurationMin: 10}}}
+	trip := Itinerary{ID: "trip", Version: 1, Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"}, Items: []Item{{ItemID: "a", PlaceID: "p1", Priority: "must", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", Priority: "want", StartAt: "2026-11-14T10:10:00+09:00", EndAt: "2026-11-14T11:10:00+09:00", StayMin: 60}}, Legs: []Leg{{ToItemID: "b", DurationMin: 10}}}
 	for _, malformed := range []string{`{}`, `null`, `{"placeIds":null}`} {
 		client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			body := `{"id":"p1","displayName":{"text":"p1"},"location":{"latitude":35,"longitude":139}}`
@@ -86,7 +86,7 @@ func TestReplanRejectsMissingAIPlaceIDs(t *testing.T) {
 }
 
 func TestReplanRetimesAbsorbedDelay(t *testing.T) {
-	trip := Itinerary{ID: "trip", Version: 1, Date: "2026-11-14", EndBy: "17:00", Items: []Item{{ItemID: "a", PlaceID: "p1", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", StartAt: "2026-11-14T11:00:00+09:00", EndAt: "2026-11-14T12:00:00+09:00", StayMin: 60}}, Legs: []Leg{{ToItemID: "b", DurationMin: 10}}}
+	trip := Itinerary{ID: "trip", Version: 1, Date: "2026-11-14", End: End{PlaceID: ref("end"), Name: "駅", ArriveBy: "17:00"}, Items: []Item{{ItemID: "a", PlaceID: "p1", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", StartAt: "2026-11-14T11:00:00+09:00", EndAt: "2026-11-14T12:00:00+09:00", StayMin: 60}}, Legs: []Leg{{ToItemID: "b", DurationMin: 10}}}
 	app := App{}
 	delay := 5
 	for _, items := range [][]Item{trip.Items, trip.Items[:1]} {
@@ -115,9 +115,30 @@ func TestSuggestRejectsMissingAIField(t *testing.T) {
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
 	app := App{Maps: &Maps{HTTP: client}, AI: &Gemini{HTTP: testHTTP(`{"candidates":[{"content":{"parts":[{"text":"{}"}]},"finishReason":"STOP"}]}`)}}
-	trip := Itinerary{Date: "2026-11-14", Start: Start{PlaceID: "start", DepartAt: "2026-11-14T09:00:00+09:00"}, EndBy: "17:00"}
+	trip := Itinerary{Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"}}
 	from, _ := time.Parse(time.RFC3339, "2026-11-14T10:00:00+09:00")
 	if _, err := app.Suggest(t.Context(), trip, from, from.Add(time.Hour), ""); err == nil || APIError(err).Status != 502 {
 		t.Fatalf("missing AI suggestions field accepted: %v", err)
+	}
+}
+
+func TestReplanWarnsWhenEndPlaceIsLate(t *testing.T) {
+	trip := Itinerary{ID: "trip", Version: 1, Date: "2026-11-14", End: End{PlaceID: ref("end"), Name: "駅", ArriveBy: "10:20", ArriveAt: "2026-11-14T10:10:00+09:00"},
+		Items: []Item{{ItemID: "a", PlaceID: "p1", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}},
+		Legs:  []Leg{{FromItemID: "a", ToItemID: "end", DurationMin: 10, DepartAt: "2026-11-14T10:00:00+09:00", ArriveAt: "2026-11-14T10:10:00+09:00"}}}
+	delay := 30
+	result, err := (&App{}).Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
+	if err != nil || len(result.Options) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	next := result.Options[0].Candidate
+	if next.End.ArriveAt != "2026-11-14T10:40:00+09:00" || next.Legs[0].DepartAt != "2026-11-14T10:30:00+09:00" || next.Summary.EndAt != next.End.ArriveAt {
+		t.Fatalf("end leg not shifted: %+v %+v", next.Legs, next.End)
+	}
+	if len(result.Warnings) != 1 || result.Warnings[0].Type != "end_at_risk" {
+		t.Fatalf("warnings: %+v", result.Warnings)
+	}
+	if trip.Legs[0].DepartAt != "2026-11-14T10:00:00+09:00" {
+		t.Fatal("input legs mutated")
 	}
 }
