@@ -1,11 +1,33 @@
 package me
 
-// GET /me/itineraries
-// ログイン中の利用者の旅程を、旅行日の新しい順に返す。
-//
-// 入力: なし。
-// 認証: Bearer の Firebase ID token を検証し、ownerUid が uid と一致する旅程だけを取得する。
-// 出力（200、JSON / UTF-8）: itineraries 配列。各旅程は id、title、date、updatedAt。
-// エラー: 401 UNAUTHENTICATED、429 RATE_LIMITED。
-//
-// 実装する処理: 認証 → 本人の旅程を検索 → 旅行日の降順で返す。
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/create-alt/gen-TLE/server/internal/service"
+)
+
+// Itineraries は GET /me/itineraries（F-08）。本人の旅程を旅行日の新しい順に limit 件ずつ返す。
+func Itineraries(app *service.App) http.HandlerFunc {
+	return service.Handle(func(w http.ResponseWriter, r *http.Request) error {
+		query := r.URL.Query()
+		limit := 20
+		if query.Has("limit") {
+			value, err := strconv.Atoi(query.Get("limit"))
+			if err != nil || value < 1 || value > 50 {
+				return service.Invalid("limit は1〜50で指定してください")
+			}
+			limit = value
+		}
+		cursor := query.Get("cursor")
+		if query.Has("cursor") && !service.Text(cursor, 1, 500) {
+			return service.Invalid("cursor が不正です")
+		}
+		page, err := app.Store.List(r.Context(), service.UID(r), limit, cursor)
+		if err != nil {
+			return err
+		}
+		service.JSON(w, 200, page)
+		return nil
+	})
+}

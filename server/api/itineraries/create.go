@@ -1,18 +1,36 @@
 package itineraries
 
-// POST /itineraries
-// 行き先と優先度から1日分の旅程を生成する（F-02）。
-//
-// 入力（JSON）:
-//   title、date（YYYY-MM-DD）、start（placeId / departAt）、endBy（HH:mm）、places。
-//   departAt は HH:mm。places は1〜10件で、各行き先は placeId、priority、stayMin を持つ。
-//   priority は must / want / optional、stayMin は10〜480分。
-//
-// 認証: Bearer の Firebase ID token を検証し、uid を ownerUid として保存する。
-// 出力（201、JSON / UTF-8）: Itinerary。入りきらない行き先と理由は dropped に入れる。
-//   version は1から開始し、ETag に version を入れる。
-//   expiresAt は旅行日から30日後。
-// エラー: 400 INVALID_ARGUMENT、401 UNAUTHENTICATED、429 RATE_LIMITED、502 UPSTREAM_ERROR。
-//   必須の予定が入りきらない場合は422 MUST_ITEMS_INFEASIBLE。details.placeIds に対象を入れる。
-//
-// 実装する処理: 認証 → 入力チェック → 移動時間・営業時間を判定 → 旅程を生成・保存 → 返す。
+import (
+	"net/http"
+
+	"github.com/create-alt/gen-TLE/server/internal/service"
+)
+
+func Create(app *service.App) http.HandlerFunc {
+	return service.Handle(func(w http.ResponseWriter, r *http.Request) error {
+		var input service.PlanInput
+		if err := service.Decode(w, r, &input); err != nil {
+			return err
+		}
+		if err := service.ValidatePlan(input); err != nil {
+			return err
+		}
+		// Maps と Gemini を呼ぶ前に上限を確かめる。保存時にもトランザクション内で確認する。
+		count, err := app.Store.Count(r.Context(), service.UID(r))
+		if err != nil {
+			return err
+		}
+		if count >= service.MaxItineraries {
+			return service.ItineraryLimit()
+		}
+		value, err := app.Plan(r.Context(), input)
+		if err != nil {
+			return err
+		}
+		if err := app.Store.Create(r.Context(), service.UID(r), &value); err != nil {
+			return err
+		}
+		service.ReplyItinerary(w, 201, value)
+		return nil
+	})
+}
