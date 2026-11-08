@@ -74,6 +74,18 @@ class ItineraryNotifier extends AsyncNotifier<Itinerary> {
     return updated;
   }
 
+  /// 旅程の名前を変える（PATCH /itineraries/:id）
+  Future<Itinerary> rename(String title) async {
+    final current = await future;
+    final updated = await _api.renameItinerary(
+      id,
+      title: title,
+      version: current.version,
+    );
+    replace(updated);
+    return updated;
+  }
+
   Future<Itinerary> acceptReplan({
     required String replanId,
     required String optionId,
