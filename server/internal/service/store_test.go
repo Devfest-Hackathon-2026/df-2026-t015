@@ -45,3 +45,22 @@ func TestAcceptValidation(t *testing.T) {
 		t.Fatalf("%+v %v", value, err)
 	}
 }
+
+func TestListCursorAndEntry(t *testing.T) {
+	cursor := encodeCursor(listCursor{Date: "2026-11-14", ID: "trip"})
+	if c, err := decodeCursor(cursor); err != nil || c.ID != "trip" || c.Date != "2026-11-14" {
+		t.Fatalf("%+v %v", c, err)
+	}
+	for _, bad := range []string{"%%%", "e30", encodeCursor(listCursor{Date: "2026-11-14", ID: "a/b"})} {
+		if _, err := decodeCursor(bad); err == nil || APIError(err).Status != 400 {
+			t.Fatalf("accepted %q", bad)
+		}
+	}
+	record := itineraryRecord{Date: "2026-11-14", UpdatedAt: time.Now(), ExpiresAt: time.Now(), Data: Itinerary{Title: "旅",
+		Start: Start{Name: "駅", DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{Name: "駅", ArriveAt: "2026-11-14T16:05:00+09:00"},
+		Items: []Item{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}}}
+	entry := entryFor("trip", record)
+	if entry.PlaceCount != 4 || len(entry.PlaceNames) != 3 || entry.End.ArriveAt != "2026-11-14T16:05:00+09:00" || entry.ExpiresAt == "" {
+		t.Fatalf("%+v", entry)
+	}
+}

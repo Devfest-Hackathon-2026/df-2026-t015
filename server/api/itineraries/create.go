@@ -12,6 +12,17 @@ func Create(app *service.App) http.HandlerFunc {
 		if err := service.Decode(w, r, &input); err != nil {
 			return err
 		}
+		if err := service.ValidatePlan(input); err != nil {
+			return err
+		}
+		// Maps と Gemini を呼ぶ前に上限を確かめる。保存時にもトランザクション内で確認する。
+		count, err := app.Store.Count(r.Context(), service.UID(r))
+		if err != nil {
+			return err
+		}
+		if count >= service.MaxItineraries {
+			return service.ItineraryLimit()
+		}
 		value, err := app.Plan(r.Context(), input)
 		if err != nil {
 			return err

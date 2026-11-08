@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -18,6 +19,12 @@ type HourPoint struct {
 	Day    int `json:"day"`
 	Hour   int `json:"hour"`
 	Minute int `json:"minute"`
+	// Date は currentOpeningHours の区間にだけ入る、その区間の日付。
+	Date *struct {
+		Year  int `json:"year"`
+		Month int `json:"month"`
+		Day   int `json:"day"`
+	} `json:"date,omitempty"`
 }
 
 type Period struct {
@@ -39,7 +46,17 @@ type mapPlace struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
 	} `json:"location"`
-	Hours *Hours `json:"regularOpeningHours"`
+	Hours       *Hours `json:"regularOpeningHours"`
+	Current     *Hours `json:"currentOpeningHours"`
+	PrimaryType struct {
+		Text string `json:"text"`
+	} `json:"primaryTypeDisplayName"`
+	PriceRange *struct {
+		StartPrice *struct {
+			CurrencyCode string `json:"currencyCode"`
+			Units        string `json:"units"`
+		} `json:"startPrice"`
+	} `json:"priceRange"`
 }
 
 func (p mapPlace) place() (Place, error) {
@@ -136,15 +153,30 @@ func (m *Maps) Search(ctx context.Context, query string, near *Point) ([]Place, 
 	return places, nil
 }
 
-func (m *Maps) Route(ctx context.Context, from, to string, depart time.Time) (Leg, error) {
+// Key は経路キャッシュ用の地点の識別子。
+func (w Waypoint) Key() string {
+	if w.PlaceID != "" {
+		return "place:" + w.PlaceID
+	}
+	return fmt.Sprintf("geo:%.6f,%.6f", w.Location.Lat, w.Location.Lng)
+}
+
+func (w Waypoint) routeJSON() map[string]any {
+	if w.PlaceID != "" {
+		return map[string]any{"placeId": w.PlaceID}
+	}
+	return map[string]any{"location": map[string]any{"latLng": map[string]float64{"latitude": w.Location.Lat, "longitude": w.Location.Lng}}}
+}
+
+func (m *Maps) Route(ctx context.Context, from, to Waypoint, depart time.Time) (Leg, error) {
 	best := Leg{Mode: "walk", DepartAt: depart.Format(time.RFC3339)}
-	if from == to {
+	if from.Key() == to.Key() {
 		best.ArriveAt = best.DepartAt
 		return best, nil
 	}
 	found := false
 	for _, mode := range []string{"WALK", "TRANSIT"} {
-		input := map[string]any{"origin": map[string]string{"placeId": from}, "destination": map[string]string{"placeId": to}, "travelMode": mode, "languageCode": "ja"}
+		input := map[string]any{"origin": from.routeJSON(), "destination": to.routeJSON(), "travelMode": mode, "languageCode": "ja"}
 		if mode == "TRANSIT" {
 			// Maps の公共交通検索は過去7日〜未来100日だけを受け付ける。
 			if depart.Before(time.Now().Add(-7*24*time.Hour)) || depart.After(time.Now().Add(100*24*time.Hour)) {
