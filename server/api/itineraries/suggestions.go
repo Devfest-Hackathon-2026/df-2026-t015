@@ -1,15 +1,33 @@
 package itineraries
 
-// GET /itineraries/:id/suggestions
-// 空き時間に入れられる近くの予定を提案する（F-07）。
-//
-// 入力（パス）: id（旅程ID）。
-// 入力（クエリ）: from / to（日時）が必須。afterItemId（直前の予定ID）は任意。
-// 認証: Bearer の Firebase ID token を検証し、ownerUid と uid を照合する。
-// 出力（200、JSON / UTF-8）: suggestions 配列。
-//   各提案は place、reason、stayMin、price、insertAfterItemId、legFromPrev を持つ。
-//   place は placeId、name、address、location。legFromPrev は mode、durationMin。
-//   price は amount、kind（fixed / estimate / unknown）、任意の source。
-// エラー: 400 INVALID_ARGUMENT、401 UNAUTHENTICATED、404 NOT_FOUND、429 RATE_LIMITED、502 UPSTREAM_ERROR。
-//
-// 実装する処理: 認証・所有者確認 → 空き時間を確認 → 近隣施設・移動時間を調べる → 提案を返す。
+import (
+	"net/http"
+	"time"
+
+	"github.com/create-alt/gen-TLE/server/internal/service"
+)
+
+// Suggestions は GET /itineraries/:id/suggestions（F-07）。
+// 前後の移動時間を除いても十分に過ごせる近くの施設（suggestions）と、施設を決めない過ごし方（ideas）を返す。
+func Suggestions(app *service.App) http.HandlerFunc {
+	return service.Handle(func(w http.ResponseWriter, r *http.Request) error {
+		from, err := time.Parse(time.RFC3339, r.URL.Query().Get("from"))
+		if err != nil {
+			return service.Invalid("from が不正です")
+		}
+		to, err := time.Parse(time.RFC3339, r.URL.Query().Get("to"))
+		if err != nil || !to.After(from) {
+			return service.Invalid("to は from より後の日時を指定してください")
+		}
+		value, err := app.Owned(r)
+		if err != nil {
+			return err
+		}
+		result, err := app.Suggest(r.Context(), value, from.In(service.JST), to.In(service.JST), r.URL.Query().Get("afterItemId"))
+		if err != nil {
+			return err
+		}
+		service.JSON(w, 200, result)
+		return nil
+	})
+}
