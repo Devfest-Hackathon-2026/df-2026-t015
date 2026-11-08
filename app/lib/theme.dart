@@ -121,6 +121,10 @@ class AppTokens extends ThemeExtension<AppTokens> {
     required this.smallIconSize,
     required this.timeColumnWidth,
     required this.dateBadgeWidth,
+    required this.planDateFieldWidth,
+    required this.endpointLabelWidth,
+    required this.endpointTimeWidth,
+    required this.endpointFieldHeight,
     required this.borderWidth,
     required this.selectedBorderWidth,
     required this.legLineWidth,
@@ -174,6 +178,18 @@ class AppTokens extends ThemeExtension<AppTokens> {
   final double smallIconSize;
   final double timeColumnWidth;
   final double dateBadgeWidth;
+
+  /// 新しい旅程：旅行日のボタンの幅
+  final double planDateFieldWidth;
+
+  /// 新しい旅程：「出発」「終わり」の見出しの幅
+  final double endpointLabelWidth;
+
+  /// 新しい旅程：出発・終わりの時刻ボタンの幅
+  final double endpointTimeWidth;
+
+  /// 新しい旅程：出発・終わりの時刻と場所のボタンの高さ
+  final double endpointFieldHeight;
   final double borderWidth;
   final double selectedBorderWidth;
   final double legLineWidth;
@@ -225,6 +241,10 @@ class AppTokens extends ThemeExtension<AppTokens> {
     smallIconSize: 18,
     timeColumnWidth: 56,
     dateBadgeWidth: 56,
+    planDateFieldWidth: 136,
+    endpointLabelWidth: 52,
+    endpointTimeWidth: 96,
+    endpointFieldHeight: 44,
     borderWidth: 1,
     selectedBorderWidth: 2,
     legLineWidth: 2,
@@ -317,6 +337,10 @@ class AppTokens extends ThemeExtension<AppTokens> {
       smallIconSize: smallIconSize,
       timeColumnWidth: timeColumnWidth,
       dateBadgeWidth: dateBadgeWidth,
+      planDateFieldWidth: planDateFieldWidth,
+      endpointLabelWidth: endpointLabelWidth,
+      endpointTimeWidth: endpointTimeWidth,
+      endpointFieldHeight: endpointFieldHeight,
       borderWidth: borderWidth,
       selectedBorderWidth: selectedBorderWidth,
       legLineWidth: legLineWidth,

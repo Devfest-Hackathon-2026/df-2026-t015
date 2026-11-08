@@ -56,6 +56,10 @@ abstract final class Format {
     return '${d.month}月${d.day}日';
   }
 
+  /// 11/23（月）
+  static String monthDayWeekday(DateTime date) =>
+      '${date.month}/${date.day}（${_weekdays[date.weekday - DateTime.monday]}）';
+
   /// TimeOfDay 相当（時・分）を HH:mm にする
   static String hhmm(int hour, int minute) =>
       '${hour.toString().padLeft(_pad, '0')}$_hhmmSeparator${minute.toString().padLeft(_pad, '0')}';
