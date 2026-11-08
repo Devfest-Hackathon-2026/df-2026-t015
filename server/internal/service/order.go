@@ -33,7 +33,8 @@ func pathCost(start Point, end *Point, points []orderPoint) float64 {
 	return total
 }
 
-// NearestNeighborOrder は must を先に、優先度ごとに出発地から近い順で並べたあと、2-opt で交差を減らす。
+// NearestNeighborOrder は出発地から近い順（最近傍法）に並べたあと、2-opt で行き来を減らす。
+// 優先度は見ない。must を先に入れ、入らない want・optional を外す処理は Build が行う。
 func NearestNeighborOrder(start Point, end *Point, visits []Visit, places map[string]Place) []Visit {
 	points := []orderPoint{}
 	for _, visit := range visits {
@@ -165,7 +166,8 @@ func (a *App) arrange(ctx context.Context, req arrangeRequest) (Itinerary, error
 		priority[visit.PlaceID] = visit.Priority
 	}
 	best, bestErr := a.Build(ctx, req.Input, req.Places, req.Base, options)
-	if len(visits) < 2 || a.AI == nil {
+	// 422（予定が入らない）以外の失敗は Maps の失敗なので、順番を変えても組めない。
+	if len(visits) < 2 || a.AI == nil || (bestErr != nil && APIError(bestErr).Status != 422) {
 		return best, bestErr
 	}
 	ids := make([]string, len(visits))
@@ -177,11 +179,9 @@ func (a *App) arrange(ctx context.Context, req arrangeRequest) (Itinerary, error
 	}
 	schema := ObjectSchema(map[string]any{"placeIds": IDArraySchema(ids, len(ids), len(ids))})
 	if err := a.AI.Ask(ctx, req.Prompt, schema, &output); err != nil {
-		// AI が使えなくても、基準の順番で組めていればそれを返す。
-		if bestErr == nil {
-			return best, nil
-		}
-		return Itinerary{}, err
+		// AI が使えなくても、基準の順番の結果を返す。基準の順番でも入らなければ、その 422 を返す
+		// （AI の失敗より、どの予定が入らないかの方が利用者に役立つため）。
+		return best, bestErr
 	}
 	start := req.Input.Start.Location
 	if start == nil {
@@ -200,24 +200,39 @@ func (a *App) arrange(ctx context.Context, req arrangeRequest) (Itinerary, error
 	case bestErr != nil:
 		return candidate, nil
 	}
-	if scoreWith(candidate, priority) < scoreWith(best, priority) {
+	if scoreOf(candidate, priority).better(scoreOf(best, priority)) {
 		return candidate, nil
 	}
 	return best, nil
 }
 
-// scoreWith は旅程の良さ（小さいほど良い）。外した行き先を優先度で重く数え、次に移動時間、最後に到着時刻を比べる。
-func scoreWith(value Itinerary, priority map[string]string) float64 {
+// planScore は旅程の良さ。外した行き先の重み（優先度ごと）、移動時間、終わる場所に着く時刻の順に比べる。
+type planScore struct {
+	Dropped float64
+	MoveMin int
+	EndAt   time.Time
+}
+
+func scoreOf(value Itinerary, priority map[string]string) planScore {
 	weight := map[string]float64{"must": 100000, "want": 1000, "optional": 100}
-	score := 0.0
+	score := planScore{MoveMin: value.Summary.MoveMin}
 	for _, item := range value.Dropped {
-		score += weight[priority[item.PlaceID]]
+		score.Dropped += weight[priority[item.PlaceID]]
 	}
-	score += float64(value.Summary.MoveMin)
-	if end, err := time.Parse(time.RFC3339, value.Summary.EndAt); err == nil {
-		score += float64(end.Hour()*60+end.Minute()) / 1000
-	}
+	score.EndAt, _ = time.Parse(time.RFC3339, value.Summary.EndAt)
 	return score
+}
+
+// better は a が b より良いか。項目を合算せず、外した行き先 → 移動時間 → 到着時刻の順に比べる
+// （移動時間の短さで、行き先を外したことを埋め合わせないため）。同点なら false。
+func (a planScore) better(b planScore) bool {
+	if a.Dropped != b.Dropped {
+		return a.Dropped < b.Dropped
+	}
+	if a.MoveMin != b.MoveMin {
+		return a.MoveMin < b.MoveMin
+	}
+	return a.EndAt.Before(b.EndAt)
 }
 
 // distanceTable は施設間の直線距離（km、小数1桁）。AI が移動を見積もる材料にする。

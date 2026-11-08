@@ -240,18 +240,16 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 	// アルゴリズムの案2: 優先度が最も低い予定（同じなら滞在が長い方）を1つ外し、後の予定を守る。
 	if skip := lowestPriority(futureVisits); skip >= 0 {
 		selected := append(append([]Visit{}, futureVisits[:skip]...), futureVisits[skip+1:]...)
-		if err := addOption(selected, "algorithm", "「"+future[skip].Name+"」を外して後の予定を守る"); err != nil {
-			return empty, err
-		}
+		// 組み立てに失敗しても（Maps の一時的な失敗など）、作成済みの案は返す。
+		_ = addOption(selected, "algorithm", "「"+future[skip].Name+"」を外して後の予定を守る")
 	}
-	// Gemini の案: 近くの代替施設も使って、遅延箇所以降を組み直す。失敗してもアルゴリズムの案は返す。
+	// Gemini の案: 近くの代替施設も使って、遅延箇所以降を組み直す。AI の応答の失敗や、
+	// 代替施設の詳細取得・経路検索の失敗はその案だけを飛ばし、作成済みの案は返す。
 	for _, proposal := range a.aiReplanProposals(ctx, trip, prefix, future, depart) {
 		if len(result.Options) >= MaxReplanOptions {
 			break
 		}
-		if err := addOption(proposal.Visits, "ai", proposal.Label); err != nil {
-			return empty, err
-		}
+		_ = addOption(proposal.Visits, "ai", proposal.Label)
 	}
 	for _, leg := range trip.Legs {
 		if leg.ToItemID == trip.Items[index+1].ItemID && leg.LineName != nil {

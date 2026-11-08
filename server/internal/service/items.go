@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -537,16 +538,28 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 		if !ok {
 			continue
 		}
-		finish := start.Add(time.Duration(stay) * time.Minute)
-		onward, err := a.Maps.Route(ctx, Waypoint{PlaceID: c.Place.PlaceID}, next, finish)
-		if err != nil {
-			return empty, err
+		// 実際の出発時刻で次への移動を調べる。間に合わなければ、遅れた分だけ滞在を短くして1回だけ調べ直す。
+		var onward Leg
+		fits := false
+		for range 2 {
+			onward, err = a.Maps.Route(ctx, Waypoint{PlaceID: c.Place.PlaceID}, next, start.Add(time.Duration(stay)*time.Minute))
+			if err != nil {
+				return empty, err
+			}
+			reach, err := time.Parse(time.RFC3339, onward.ArriveAt)
+			if err != nil {
+				return empty, Upstream()
+			}
+			if !reach.After(to) {
+				fits = true
+				break
+			}
+			stay -= int(math.Ceil(reach.Sub(to).Minutes()))
+			if stay < minimumStay {
+				break
+			}
 		}
-		reach, err := time.Parse(time.RFC3339, onward.ArriveAt)
-		if err != nil {
-			return empty, Upstream()
-		}
-		if reach.After(to) {
+		if !fits {
 			continue
 		}
 		suggestion := Suggestion{Place: c.Place, TypeLabel: c.TypeLabel, Reason: strings.TrimSpace(selected.Reason), StayMin: stay, Price: Price{Kind: "unknown"}, InsertAfterItemID: "start"}
@@ -601,19 +614,21 @@ func (a *App) gapCandidates(ctx context.Context, trip Itinerary, previous, next 
 		if err != nil {
 			return nil, err
 		}
-		out, err := a.Maps.Route(ctx, Waypoint{PlaceID: value.Place.PlaceID}, next, from)
-		if err != nil {
-			return nil, err
-		}
-		available := window - in.DurationMin - out.DurationMin
-		if available < minimumStay {
-			continue
-		}
 		arrival, err := time.Parse(time.RFC3339, in.ArriveAt)
 		if err != nil {
 			return nil, Upstream()
 		}
-		if _, _, ok := OpenAt(value.Place.Hours, arrival, minimumStay); !ok {
+		start, _, ok := OpenAt(value.Place.Hours, arrival, minimumStay)
+		if !ok {
+			continue
+		}
+		// 次への移動は、着いて最短の滞在をしたあとに出発する時刻で調べる（公共交通は出発時刻で待ち時間が変わるため）。
+		out, err := a.Maps.Route(ctx, Waypoint{PlaceID: value.Place.PlaceID}, next, start.Add(minimumStay*time.Minute))
+		if err != nil {
+			return nil, err
+		}
+		available := int(to.Sub(start).Minutes()) - out.DurationMin
+		if available < minimumStay {
 			continue
 		}
 		candidates = append(candidates, gapCandidate{Place: value.Place, TypeLabel: value.TypeLabel, In: in, Out: out, AvailableMin: available, Hours: DayHours(nil, value.Place.Hours, day)})

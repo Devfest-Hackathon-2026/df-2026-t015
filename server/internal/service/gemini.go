@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 )
 
@@ -123,16 +124,73 @@ func (g *Gemini) generate(ctx context.Context, prompt string, temperature float6
 			text.WriteString(part.Text)
 		}
 	}
-	if strings.TrimSpace(text.String()) == "null" {
+	return decodeStrict(text.String(), schema, output)
+}
+
+// decodeStrict は応答を output に入れる。試行ごとに新しい値へデコードし、未知の項目・複数のJSON値・
+// スキーマの必須項目の欠けがなければ output に反映する。失敗した試行の値は output に残さない。
+func decodeStrict(text string, schema map[string]any, output any) error {
+	if strings.TrimSpace(text) == "null" {
 		return errInvalidOutput
 	}
-	decoder := json.NewDecoder(strings.NewReader(text.String()))
+	var generic any
+	if err := json.Unmarshal([]byte(text), &generic); err != nil || !hasRequired(schema, generic) {
+		return errInvalidOutput
+	}
+	target := reflect.ValueOf(output)
+	if target.Kind() != reflect.Pointer || target.IsNil() {
+		return errInvalidOutput
+	}
+	fresh := reflect.New(target.Elem().Type())
+	decoder := json.NewDecoder(strings.NewReader(text))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(output); err != nil {
+	if err := decoder.Decode(fresh.Interface()); err != nil {
 		return errInvalidOutput
 	}
 	if decoder.Decode(new(any)) != io.EOF {
 		return errInvalidOutput
 	}
+	target.Elem().Set(fresh.Elem())
 	return nil
+}
+
+// hasRequired は value がスキーマの required（入れ子のオブジェクト・配列の要素も含む）を満たすか調べる。
+func hasRequired(schema map[string]any, value any) bool {
+	if schema == nil {
+		return true
+	}
+	switch schema["type"] {
+	case "object":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return false
+		}
+		required, _ := schema["required"].([]string)
+		for _, name := range required {
+			if field, ok := object[name]; !ok || field == nil {
+				return false
+			}
+		}
+		properties, _ := schema["properties"].(map[string]any)
+		for name, property := range properties {
+			child, ok := property.(map[string]any)
+			if field, present := object[name]; ok && present && field != nil && !hasRequired(child, field) {
+				return false
+			}
+		}
+	case "array":
+		items, ok := schema["items"].(map[string]any)
+		list, isList := value.([]any)
+		if !isList {
+			return false
+		}
+		if ok {
+			for _, item := range list {
+				if !hasRequired(items, item) {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
