@@ -65,13 +65,13 @@ abstract final class AppStrings {
   static const planEndBySuffix = ' まで';
   static const planStartPlaceLabel = '出発地';
   static const planEndPlaceLabel = '終わる場所';
-  static const planPickFromMapSuffix = 'を地図から選ぶ';
+  static const planSearchSuffix = 'を検索する';
   static const planStartUnset = '出発地を選ぶ';
   static const planEndUnset = '終わる場所を選ぶ';
   static const planPlacesHeader = '行きたい場所と大事さ';
   static const planAddHint = '場所や、したいことを入力';
   static const planAddButton = '追加';
-  static const planMapButton = '地図から行き先を選ぶ';
+  static const planSearchPlaceButton = '行き先を検索する';
   static const planPriorityLabel = '優先度';
   static const planAutoTitleMoreSuffix = ' ほか';
   static const planSubmit = '旅程を作る';
@@ -83,12 +83,17 @@ abstract final class AppStrings {
   static const planRemove = '外す';
   static const planTooMany = '行き先は 10 件までです';
   static const planNeedStart = '出発地を選んでください';
+  static const planStartLocked = '開始済みの旅程は、同じ旅行日のまま出発地・出発時刻を変更できません';
+  static const planInvalidTimeRange = '終わりの時刻は出発時刻より後にしてください';
   static const planMustInfeasible = '「必須」の予定がすべては入りきりません。優先度か終わりたい時刻を見直してください';
   static const planEndInfeasible = '行き先を外しても、終わりたい時刻までに終わる場所に着けません。時刻を見直してください';
   static const planItineraryLimit = '保存できる旅程の上限に達しています。使わない旅程を削除してください';
   static const planStartSearchTitle = '出発地を探す';
   static const planEndSearchTitle = '終わる場所を探す';
   static const planPlaceSearchTitle = '行き先を探す';
+  static const planSearchHint = '駅名や施設名を入力';
+  static const planSearchEmpty = '候補が見つかりません。別の名前で検索してください';
+  static const planSearchError = '候補を読み込めませんでした。入力し直してお試しください';
   static const planNamedSeparator = '・';
 
   // 3.2 今日の旅程

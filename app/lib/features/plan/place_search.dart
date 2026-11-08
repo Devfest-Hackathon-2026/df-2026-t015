@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../constants/api_constraints.dart';
+import '../../constants/app_strings.dart';
 import '../../data/models/models.dart';
 import '../../data/providers.dart';
 import '../../theme.dart';
@@ -21,9 +22,9 @@ AsyncValue<List<Place>> useAutocomplete(WidgetRef ref, String query) {
       result.value = const AsyncData([]);
       return null;
     }
+    result.value = const AsyncLoading();
     var cancelled = false;
     final timer = Timer(_autocompleteDebounce, () async {
-      result.value = const AsyncLoading();
       final next = await AsyncValue.guard(
         () => ref.read(itineraryApiProvider).autocomplete(trimmed),
       );
@@ -86,9 +87,21 @@ class PlaceSearchSheet extends HookConsumerWidget {
               style: context.texts.bodyLarge,
             ),
           ),
-          PlaceCandidateList(
-            candidates: candidates,
-            onPick: (place) => Navigator.of(context).pop(place),
+          Flexible(
+            child: SingleChildScrollView(
+              child: switch (candidates) {
+                AsyncError() => const Text(AppStrings.planSearchError),
+                AsyncData(:final value)
+                    when value.isEmpty &&
+                        text.trim().length >=
+                            ApiConstraints.autocompleteQueryMinLength =>
+                  const Text(AppStrings.planSearchEmpty),
+                _ => PlaceCandidateList(
+                  candidates: candidates,
+                  onPick: (place) => Navigator.of(context).pop(place),
+                ),
+              },
+            ),
           ),
         ],
       ),
