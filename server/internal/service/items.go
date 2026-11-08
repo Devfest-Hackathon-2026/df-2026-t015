@@ -112,12 +112,26 @@ func sameStart(a, b Start) bool {
 // Edit は PUT /itineraries/:id/places の再生成を行う。
 // 旅行日を変えると旅程全体を作り直す。同じ日のままなら完了済み・滞在中の予定を固定し、残りだけを作り直す。
 func (a *App) Edit(ctx context.Context, old Itinerary, input EditInput) (Itinerary, error) {
-	if err := ValidateVisits(input.Places); err != nil {
-		return Itinerary{}, err
-	}
 	date := old.Date
 	if input.Date != nil {
 		date = *input.Date
+	}
+	count := 0
+	for i, item := range old.Items {
+		if item.Status == "done" || item.Status == "current" {
+			count = i + 1
+		}
+	}
+	// 同じ日のまま編集するときは、完了済み・滞在中の予定をそのまま送り直せるようにする
+	// （遅延で延びた滞在時間が480分を超えていても受け付ける）。旅行日を変えると全体を作り直すので通常どおり確認する。
+	fixedStay := map[string]int{}
+	if date == old.Date {
+		for _, item := range old.Items[:count] {
+			fixedStay[item.PlaceID] = item.StayMin
+		}
+	}
+	if err := validateVisits(input.Places, fixedStay); err != nil {
+		return Itinerary{}, err
 	}
 	start := old.Start
 	departAt, err := clock(old.Start.DepartAt)
@@ -167,12 +181,6 @@ func (a *App) Edit(ctx context.Context, old Itinerary, input EditInput) (Itinera
 		return next, nil
 	}
 
-	count := 0
-	for i, item := range old.Items {
-		if item.Status == "done" || item.Status == "current" {
-			count = i + 1
-		}
-	}
 	if count == 0 {
 		plan := PlanInput{Title: old.Title, Date: date, Start: start, End: end, Places: input.Places}
 		next, err := a.replanPart(ctx, plan, old.Items, nil)

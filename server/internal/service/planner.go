@@ -20,6 +20,12 @@ func At(date, clock string) (time.Time, error) {
 }
 
 func ValidateVisits(visits []Visit) error {
+	return validateVisits(visits, nil)
+}
+
+// validateVisits は行き先を確認する。fixedStay にある施設（完了済み・滞在中の予定）は、
+// 遅延で滞在が延びて480分を超えることがあるため、同じ滞在時間なら範囲を確認しない。
+func validateVisits(visits []Visit, fixedStay map[string]int) error {
 	if len(visits) < 1 || len(visits) > 10 {
 		return Invalid("places は1〜10件で指定してください")
 	}
@@ -31,6 +37,9 @@ func ValidateVisits(visits []Visit) error {
 		seen[visit.PlaceID] = true
 		if visit.Priority != "must" && visit.Priority != "want" && visit.Priority != "optional" {
 			return Invalid("priority が不正です")
+		}
+		if stay, fixed := fixedStay[visit.PlaceID]; fixed && stay == visit.StayMin {
+			continue
 		}
 		if visit.StayMin < 10 || visit.StayMin > 480 {
 			return Invalid("stayMin は10〜480分で指定してください")
@@ -98,26 +107,6 @@ func ValidatePlan(input PlanInput) error {
 		return Invalid("end.arriveBy は出発後の同日内の時刻を指定してください")
 	}
 	return ValidateVisits(input.Places)
-}
-
-func OrderedVisits(visits []Visit, ids []string) ([]Visit, error) {
-	if len(ids) != len(visits) {
-		return nil, Upstream()
-	}
-	byID := map[string]Visit{}
-	for _, visit := range visits {
-		byID[visit.PlaceID] = visit
-	}
-	ordered := make([]Visit, 0, len(ids))
-	for _, id := range ids {
-		visit, ok := byID[id]
-		if !ok {
-			return nil, Upstream()
-		}
-		ordered = append(ordered, visit)
-		delete(byID, id)
-	}
-	return ordered, nil
 }
 
 func OpenAt(hours *Hours, arrival time.Time, stay int) (time.Time, *OpeningHours, bool) {

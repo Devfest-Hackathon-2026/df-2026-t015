@@ -26,10 +26,6 @@ func ObjectSchema(properties map[string]any) map[string]any {
 	return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
 }
 
-func StringArraySchema() map[string]any {
-	return map[string]any{"type": "array", "items": map[string]string{"type": "string"}}
-}
-
 // Prompt は Gemini に渡す指示。役割・タスク・ルール・入力データを決まった順に並べ、
 // 入力データは JSON のコードブロックに入れて指示と区別する（データ内の命令に従わせないため）。
 type Prompt struct {
@@ -73,10 +69,6 @@ func IDArraySchema(ids []string, min, max int) map[string]any {
 
 // errInvalidOutput は Gemini の応答がスキーマどおりの JSON でなかったことを表す。1回だけ再試行する。
 var errInvalidOutput = errors.New("gemini: invalid structured output")
-
-func (g *Gemini) Generate(ctx context.Context, prompt string, schema map[string]any, output any) error {
-	return g.run(ctx, prompt, 0.2, schema, output)
-}
 
 // Ask は Prompt を組み立てて構造化出力を得る。スキーマに合わない応答は1回だけ再試行する。
 func (g *Gemini) Ask(ctx context.Context, prompt Prompt, schema map[string]any, output any) error {

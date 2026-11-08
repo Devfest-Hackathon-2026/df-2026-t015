@@ -279,3 +279,24 @@ func TestSuggestChecksOnwardTransitFromTheActualDeparture(t *testing.T) {
 		t.Fatalf("%+v %v", result, err)
 	}
 }
+
+func TestEditAcceptsFixedItemExtendedByDelay(t *testing.T) {
+	// 300分の滞在が遅延で520分に延びた滞在中の予定。⑥ では全件を送り直すので、その値のまま受け付ける。
+	trip := Itinerary{ID: "trip", Version: 2, Title: "旅", Date: "2026-11-14", ExpiresAt: "2026-12-14T00:00:00+09:00",
+		Start: Start{PlaceID: ref("start"), Name: "start", Location: &Point{Lat: 35, Lng: 139}, DepartAt: "2026-11-14T08:00:00+09:00"},
+		End:   End{PlaceID: ref("start"), Name: "start", Location: &Point{Lat: 35, Lng: 139}, ArriveBy: "20:00"},
+		Items: []Item{{ItemID: "a", PlaceID: "p1", Name: "p1", Priority: "must", StayMin: 520, Status: "current", StartAt: "2026-11-14T08:10:00+09:00", EndAt: "2026-11-14T16:50:00+09:00"}}}
+	app := App{Maps: &Maps{HTTP: placesHTTP()}}
+	value, err := app.Edit(context.Background(), trip, EditInput{Places: []Visit{{PlaceID: "p1", Priority: "must", StayMin: 520}}})
+	if err != nil || len(value.Items) != 1 || value.Items[0].StayMin != 520 || value.End.ArriveAt != "2026-11-14T17:00:00+09:00" {
+		t.Fatalf("%+v %v", value, err)
+	}
+	// 新しく追加する行き先は、これまでどおり480分までにする。
+	if _, err := app.Edit(context.Background(), trip, EditInput{Places: []Visit{{PlaceID: "p1", Priority: "must", StayMin: 520}, {PlaceID: "p2", Priority: "want", StayMin: 500}}}); err == nil || APIError(err).Status != 400 {
+		t.Fatalf("long new stay accepted: %v", err)
+	}
+	// 滞在中の予定の滞在時間を変えることはできない。
+	if _, err := app.Edit(context.Background(), trip, EditInput{Places: []Visit{{PlaceID: "p1", Priority: "must", StayMin: 490}}}); err == nil || APIError(err).Status != 400 {
+		t.Fatalf("changed fixed stay accepted: %v", err)
+	}
+}

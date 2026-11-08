@@ -8,18 +8,6 @@ import (
 
 func ref(value string) *string { return &value }
 
-func TestVisitOrderRejectsInventedAndDuplicateIDs(t *testing.T) {
-	visits := []Visit{{PlaceID: "a", Priority: "must", StayMin: 60}, {PlaceID: "b", Priority: "want", StayMin: 30}}
-	for _, ids := range [][]string{{"a", "fake"}, {"a", "a"}, {"a"}} {
-		if _, err := OrderedVisits(visits, ids); err == nil {
-			t.Fatalf("accepted %v", ids)
-		}
-	}
-	if ordered, err := OrderedVisits(visits, []string{"b", "a"}); err != nil || ordered[0].PlaceID != "b" {
-		t.Fatalf("%v %v", ordered, err)
-	}
-}
-
 func TestOpeningHours(t *testing.T) {
 	arrival := time.Date(2026, 11, 5, 12, 30, 0, 0, JST)
 	hours := &Hours{Periods: []Period{
