@@ -39,6 +39,23 @@ func distance(a, b Point) float64 {
 // Nearby は center から radius（m）以内の施設を最大20件返す。
 // query がなければ Nearby Search、あれば Text Search で探して範囲外を除く。
 func (m *Maps) Nearby(ctx context.Context, center Point, radius int, query string) ([]NearbyPlace, error) {
+	values, err := m.nearby(ctx, center, radius, query, nearbyMask)
+	if err != nil {
+		return nil, err
+	}
+	places := []NearbyPlace{}
+	for _, value := range values {
+		places = append(places, NearbyPlace{PlaceID: value.Place.PlaceID, Name: value.Place.Name, Address: value.Place.Address, Location: value.Place.Location, TypeLabel: value.TypeLabel})
+	}
+	return places, nil
+}
+
+type nearbyResult struct {
+	Place     Place
+	TypeLabel string
+}
+
+func (m *Maps) nearby(ctx context.Context, center Point, radius int, query, mask string) ([]nearbyResult, error) {
 	circle := map[string]any{"circle": map[string]any{"center": map[string]float64{"latitude": center.Lat, "longitude": center.Lng}, "radius": radius}}
 	var output struct {
 		Places []mapPlace `json:"places"`
@@ -46,15 +63,15 @@ func (m *Maps) Nearby(ctx context.Context, center Point, radius int, query strin
 	var err error
 	if query == "" {
 		input := map[string]any{"locationRestriction": circle, "maxResultCount": 20, "languageCode": "ja", "regionCode": "jp"}
-		err = Request(ctx, m.HTTP, "POST", "https://places.googleapis.com/v1/places:searchNearby", m.headers(nearbyMask), input, &output)
+		err = Request(ctx, m.HTTP, "POST", "https://places.googleapis.com/v1/places:searchNearby", m.headers(mask), input, &output)
 	} else {
 		input := map[string]any{"textQuery": query, "locationBias": circle, "pageSize": 20, "languageCode": "ja", "regionCode": "jp"}
-		err = Request(ctx, m.HTTP, "POST", "https://places.googleapis.com/v1/places:searchText", m.headers(nearbyMask), input, &output)
+		err = Request(ctx, m.HTTP, "POST", "https://places.googleapis.com/v1/places:searchText", m.headers(mask), input, &output)
 	}
 	if err != nil {
 		return nil, err
 	}
-	places := []NearbyPlace{}
+	places := []nearbyResult{}
 	for _, value := range output.Places {
 		p, err := value.place()
 		if err != nil {
@@ -63,7 +80,7 @@ func (m *Maps) Nearby(ctx context.Context, center Point, radius int, query strin
 		if distance(center, p.Location) > float64(radius) || len(places) >= 20 {
 			continue
 		}
-		places = append(places, NearbyPlace{PlaceID: p.PlaceID, Name: p.Name, Address: p.Address, Location: p.Location, TypeLabel: value.PrimaryType.Text})
+		places = append(places, nearbyResult{Place: p, TypeLabel: value.PrimaryType.Text})
 	}
 	return places, nil
 }

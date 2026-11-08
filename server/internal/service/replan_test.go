@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -65,26 +66,73 @@ func TestSuggestionsRejectOccupiedWindow(t *testing.T) {
 	}
 }
 
-func TestReplanRejectsMissingAIPlaceIDs(t *testing.T) {
-	trip := Itinerary{ID: "trip", Version: 1, Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"}, Items: []Item{{ItemID: "a", PlaceID: "p1", Priority: "must", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", Priority: "want", StartAt: "2026-11-14T10:10:00+09:00", EndAt: "2026-11-14T11:10:00+09:00", StayMin: 60}}, Legs: []Leg{{ToItemID: "b", DurationMin: 10}}}
-	for _, malformed := range []string{`{}`, `null`, `{"placeIds":null}`} {
-		client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			body := `{"id":"p1","displayName":{"text":"p1"},"location":{"latitude":35,"longitude":139}}`
-			if strings.Contains(r.URL.Path, "searchText") {
-				body = `{"places":[]}`
-			}
-			return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
-		})}
-		aiJSON := `{"options":[` + malformed + `]}`
-		ai := &Gemini{HTTP: testHTTP(`{"candidates":[{"content":{"parts":[{"text":` + strconv.Quote(aiJSON) + `}]},"finishReason":"STOP"}]}`)}
-		app := App{Maps: &Maps{HTTP: client}, AI: ai}
+// placesHTTP は Places Details に ID どおりの施設を返し、検索は空、経路は10分にする偽のクライアント。
+func placesHTTP() *http.Client {
+	return &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := `{"routes":[{"duration":"600s"}]}`
+		switch {
+		case strings.Contains(r.URL.Path, "searchText"), strings.Contains(r.URL.Path, "searchNearby"):
+			body = `{"places":[]}`
+		case strings.HasPrefix(r.URL.Path, "/v1/places/"):
+			id := strings.TrimPrefix(r.URL.Path, "/v1/places/")
+			body = `{"id":"` + id + `","displayName":{"text":"` + id + `"},"location":{"latitude":35,"longitude":139}}`
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+}
+
+func geminiReturning(text string) *Gemini {
+	return &Gemini{HTTP: testHTTP(`{"candidates":[{"content":{"parts":[{"text":` + strconv.Quote(text) + `}]},"finishReason":"STOP"}]}`)}
+}
+
+func TestReplanKeepsAlgorithmOptionsWhenAIIsInvalid(t *testing.T) {
+	trip := Itinerary{ID: "trip", Version: 1, Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"},
+		Items: []Item{{ItemID: "a", PlaceID: "p1", Priority: "must", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", Priority: "want", StartAt: "2026-11-14T10:10:00+09:00", EndAt: "2026-11-14T11:10:00+09:00", StayMin: 60}},
+		Legs:  []Leg{{FromItemID: "a", ToItemID: "b", DurationMin: 10}}}
+	for _, malformed := range []string{`{}`, `null`, `{"options":[{"placeIds":null}]}`, `{"options":[{"label":"x","placeIds":["invented"]}]}`, `not json`} {
+		app := App{Maps: &Maps{HTTP: placesHTTP()}, AI: geminiReturning(malformed)}
 		delay := 20
-		if _, err := app.Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay}); err == nil || APIError(err).Status != 502 {
-			t.Errorf("accepted %s: %v", malformed, err)
+		result, err := app.Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
+		if err != nil {
+			t.Fatalf("%s: %v", malformed, err)
+		}
+		if len(result.Options) != 2 {
+			t.Fatalf("%s: %+v", malformed, result.Options)
+		}
+		for _, option := range result.Options {
+			if option.Source != "algorithm" {
+				t.Fatalf("%s: invalid AI option accepted: %+v", malformed, option)
+			}
 		}
 	}
 }
 
+func TestLowestPriority(t *testing.T) {
+	visits := []Visit{{PlaceID: "a", Priority: "must"}, {PlaceID: "b", Priority: "want", StayMin: 90}, {PlaceID: "c", Priority: "optional", StayMin: 30}, {PlaceID: "d", Priority: "optional", StayMin: 60}}
+	if got := lowestPriority(visits); got != 3 {
+		t.Fatalf("got %d", got)
+	}
+	if got := lowestPriority(visits[:1]); got != -1 {
+		t.Fatalf("must only: %d", got)
+	}
+}
+
+func TestExplanationFactsAndReasons(t *testing.T) {
+	before := Item{ItemID: "b", PlaceID: "p2", Name: "海の美術館", Priority: "want", StartAt: "2026-11-14T11:00:00+09:00", StayMin: 60}
+	after := before
+	after.StartAt = "2026-11-14T11:40:00+09:00"
+	option := Option{OptionID: "op", Label: "時刻をずらす", Source: "algorithm", Changes: []Change{{Type: "retime", ItemID: "b", Before: &before, After: &after}, {Type: "keep", ItemID: "c", Before: &before, After: &before}}}
+	facts := ExplanationFacts(Replan{Warnings: []Warning{{Type: "miss_transit", Message: "バスに間に合いません"}}}, option)
+	changes := facts["changes"].([]changeFact)
+	if len(changes) != 2 || *changes[0].ShiftMin != 40 || changes[0].AfterStart != "11:40" {
+		t.Fatalf("%+v", changes)
+	}
+	app := App{AI: geminiReturning(`{"summary":"40分遅らせました。","reasons":[{"itemId":"b","reason":"遅れに合わせました。"},{"itemId":"c","reason":"keep は対象外"}]}`)}
+	result, err := app.Explain(context.Background(), Replan{}, option)
+	if err != nil || result.Status != "ready" || len(result.Reasons) != 1 || result.Reasons[0].Type != "retime" {
+		t.Fatalf("%+v %v", result, err)
+	}
+}
 func TestReplanRetimesAbsorbedDelay(t *testing.T) {
 	trip := Itinerary{ID: "trip", Version: 1, Date: "2026-11-14", End: End{PlaceID: ref("end"), Name: "駅", ArriveBy: "17:00"}, Items: []Item{{ItemID: "a", PlaceID: "p1", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", StartAt: "2026-11-14T11:00:00+09:00", EndAt: "2026-11-14T12:00:00+09:00", StayMin: 60}}, Legs: []Leg{{ToItemID: "b", DurationMin: 10}}}
 	app := App{}
@@ -140,5 +188,94 @@ func TestReplanWarnsWhenEndPlaceIsLate(t *testing.T) {
 	}
 	if trip.Legs[0].DepartAt != "2026-11-14T10:00:00+09:00" {
 		t.Fatal("input legs mutated")
+	}
+}
+
+func TestReplanReturnsAtMostFiveOptions(t *testing.T) {
+	trip := Itinerary{ID: "trip", Version: 1, Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"},
+		Items: []Item{{ItemID: "a", PlaceID: "p1", Priority: "must", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", Priority: "want", StartAt: "2026-11-14T10:10:00+09:00", EndAt: "2026-11-14T11:10:00+09:00", StayMin: 60}, {ItemID: "c", PlaceID: "p3", Priority: "optional", StartAt: "2026-11-14T11:20:00+09:00", EndAt: "2026-11-14T12:20:00+09:00", StayMin: 60}},
+		Legs:  []Leg{{FromItemID: "a", ToItemID: "b", DurationMin: 10}}}
+	// AI がスキーマを超えて4案、しかもすべて異なる案を返しても、AI の案は3案までにする。
+	ai := `{"options":[{"label":"1","placeIds":["p3","p2"]},{"label":"2","placeIds":["p3"]},{"label":"3","placeIds":["p2"]},{"label":"4","placeIds":[]}]}`
+	app := App{Maps: &Maps{HTTP: placesHTTP()}, AI: geminiReturning(ai)}
+	delay := 20
+	result, err := app.Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
+	if err != nil || len(result.Options) > MaxReplanOptions {
+		t.Fatalf("%d options: %v", len(result.Options), err)
+	}
+	counts := map[string]int{}
+	for _, option := range result.Options {
+		counts[option.Source]++
+	}
+	if counts["algorithm"] != 2 || counts["ai"] < 1 || counts["ai"] > MaxAIReplanOptions {
+		t.Fatalf("%v", counts)
+	}
+}
+
+func TestReplanSkipsAIOptionWhosePlaceCannotBeLoaded(t *testing.T) {
+	trip := Itinerary{ID: "trip", Version: 1, Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"},
+		Items: []Item{{ItemID: "a", PlaceID: "p1", Priority: "must", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", Priority: "want", StartAt: "2026-11-14T10:10:00+09:00", EndAt: "2026-11-14T11:10:00+09:00", StayMin: 60}},
+		Legs:  []Leg{{FromItemID: "a", ToItemID: "b", DurationMin: 10}}}
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		status, body := 200, `{"routes":[{"duration":"600s"}]}`
+		switch {
+		case strings.Contains(r.URL.Path, "searchText"):
+			body = `{"places":[{"id":"broken","displayName":{"text":"代替施設"},"location":{"latitude":35,"longitude":139}}]}`
+		case r.URL.Path == "/v1/places/broken":
+			// AI が選んだ代替施設の詳細取得が失敗する。
+			status, body = 500, `{}`
+		case strings.HasPrefix(r.URL.Path, "/v1/places/"):
+			id := strings.TrimPrefix(r.URL.Path, "/v1/places/")
+			body = `{"id":"` + id + `","displayName":{"text":"` + id + `"},"location":{"latitude":35,"longitude":139}}`
+		}
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	app := App{Maps: &Maps{HTTP: client}, AI: geminiReturning(`{"options":[{"label":"代替施設へ","placeIds":["broken"]}]}`)}
+	delay := 20
+	result, err := app.Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
+	if err != nil || len(result.Options) != 2 || result.Options[0].Source != "algorithm" || result.Options[1].Source != "algorithm" {
+		t.Fatalf("%+v %v", result.Options, err)
+	}
+}
+
+func TestSuggestChecksOnwardTransitFromTheActualDeparture(t *testing.T) {
+	from, _ := time.Parse(time.RFC3339, "2026-11-14T13:00:00+09:00")
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := ""
+		switch {
+		case strings.Contains(r.URL.Path, "searchNearby"):
+			body = `{"places":[{"id":"cafe","displayName":{"text":"港のカフェ"},"location":{"latitude":35.001,"longitude":139},"primaryTypeDisplayName":{"text":"カフェ"}}]}`
+		case strings.HasPrefix(r.URL.Path, "/v1/places/"):
+			body = `{"id":"p1","displayName":{"text":"p1"},"location":{"latitude":35,"longitude":139}}`
+		case strings.Contains(r.URL.Path, "computeRoutes"):
+			var request struct {
+				Origin struct {
+					PlaceID string `json:"placeId"`
+				} `json:"origin"`
+				Mode      string `json:"travelMode"`
+				Departure string `json:"departureTime"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				return nil, err
+			}
+			// 徒歩は50分。カフェからの公共交通は、空き時間の開始（13:00）に出ると次の便まで待つため50分、
+			// 滞在後に出れば5分。それ以外の公共交通は5分。
+			duration := "3000s"
+			if request.Mode == "TRANSIT" {
+				duration = "300s"
+				if departure, _ := time.Parse(time.RFC3339, request.Departure); request.Origin.PlaceID == "cafe" && departure.Equal(from) {
+					duration = "3000s"
+				}
+			}
+			body = `{"routes":[{"duration":"` + duration + `"}]}`
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	app := App{Maps: &Maps{HTTP: client}, AI: geminiReturning(`{"ideas":[],"suggestions":[{"placeId":"cafe","reason":"港を眺めて休憩できる","stayMin":30}]}`)}
+	trip := Itinerary{Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"},
+		Items: []Item{{ItemID: "a", PlaceID: "p1", StartAt: "2026-11-14T12:00:00+09:00", EndAt: "2026-11-14T13:00:00+09:00"}, {ItemID: "b", PlaceID: "p2", StartAt: "2026-11-14T14:00:00+09:00", EndAt: "2026-11-14T15:00:00+09:00"}}}
+	result, err := app.Suggest(context.Background(), trip, from, from.Add(time.Hour), "a")
+	if err != nil || len(result.Suggestions) != 1 || result.Suggestions[0].LegToNext.DurationMin != 5 {
+		t.Fatalf("%+v %v", result, err)
 	}
 }

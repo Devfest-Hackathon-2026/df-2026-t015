@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"math"
 	"strings"
 	"time"
@@ -173,7 +172,7 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 		summarize(&candidate)
 		warnEnd(candidate)
 		option := Option{
-			OptionID: "op_" + rand.Text(), Changes: Changes(trip, candidate),
+			OptionID: "op_" + rand.Text(), Source: "algorithm", Label: "時刻だけ調整する", Changes: Changes(trip, candidate),
 			SummaryBefore: trip.Summary, SummaryAfter: candidate.Summary,
 			Preview: Preview{Items: candidate.Items, Legs: candidate.Legs}, Candidate: candidate,
 		}
@@ -182,74 +181,26 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 		return result, nil
 	}
 	future := trip.Items[index+1:]
-	origin, err := a.Maps.Details(ctx, prefix[index].PlaceID)
-	if err != nil {
-		return empty, err
-	}
-	alternatives, err := a.Maps.Search(ctx, "短時間で訪問できる近くの観光施設", &origin.Location)
-	if err != nil {
-		return empty, err
-	}
-	visits := map[string]Visit{}
-	prior := map[string]bool{}
-	for _, item := range prefix {
-		prior[item.PlaceID] = true
-	}
+	futureVisits := []Visit{}
 	for _, item := range future {
-		visits[item.PlaceID] = Visit{PlaceID: item.PlaceID, Priority: item.Priority, StayMin: item.StayMin}
+		futureVisits = append(futureVisits, Visit{PlaceID: item.PlaceID, Priority: item.Priority, StayMin: item.StayMin})
 	}
-	verified := []Place{}
-	for _, place := range alternatives {
-		if _, exists := visits[place.PlaceID]; !exists && !prior[place.PlaceID] {
-			visits[place.PlaceID] = Visit{PlaceID: place.PlaceID, Priority: "want", StayMin: 30}
-			verified = append(verified, place)
-		}
-	}
-	var output struct {
-		Options []struct {
-			PlaceIDs []string `json:"placeIds"`
-		} `json:"options"`
-	}
-	schema := ObjectSchema(map[string]any{
-		"options": map[string]any{
-			"type": "array", "minItems": 1, "maxItems": 3,
-			"items": ObjectSchema(map[string]any{
-				"placeIds": map[string]any{"type": "array", "maxItems": 10, "items": map[string]string{"type": "string"}},
-			}),
-		},
-	})
-	data, _ := json.Marshal(map[string]any{"remaining": future, "alternatives": verified, "departAt": depart, "end": trip.End})
-	prompt := "遅延後の旅程の訪問順を最大3案提案してください。remaining の placeId と alternatives の placeId だけを使い、1案内で重複させないでください。mustはできる限り残してください。追加する代替施設の数は除外する元施設の数以内とし、移動を抑えてください。最後に end（終わる場所）へ end.arriveBy までに着けるようにしてください。成立しない施設は除外できます。\n" + string(data)
-	if err := a.AI.Generate(ctx, prompt, schema, &output); err != nil {
-		return empty, err
-	}
-	if len(output.Options) < 1 || len(output.Options) > 3 {
-		return empty, Upstream()
-	}
-	signatures := map[string]bool{}
+	seenPlans := map[string]bool{}
 	warned := map[string]bool{}
-	for _, proposal := range output.Options {
-		if proposal.PlaceIDs == nil || len(proposal.PlaceIDs) > len(future) {
-			return empty, Upstream()
-		}
-		selected := []Visit{}
-		seen := map[string]bool{}
-		for _, id := range proposal.PlaceIDs {
-			visit, ok := visits[id]
-			if !ok || seen[id] {
-				return empty, Upstream()
-			}
-			seen[id] = true
-			selected = append(selected, visit)
-		}
-		signature := strings.Join(proposal.PlaceIDs, "/")
-		if signatures[signature] {
-			continue
-		}
-		signatures[signature] = true
+	addOption := func(selected []Visit, source, label string) error {
 		candidate, err := a.suffix(ctx, trip, prefix, depart, selected, true)
 		if err != nil {
-			return empty, err
+			return err
+		}
+		ids := []string{}
+		for _, item := range candidate.Items {
+			ids = append(ids, item.PlaceID)
+		}
+		// 組んだ結果が同じになる案は1つにまとめる（先に作ったアルゴリズムの案を残す）。
+		if key := strings.Join(ids, "/"); seenPlans[key] {
+			return nil
+		} else {
+			seenPlans[key] = true
 		}
 		warnEnd(candidate)
 		present := map[string]bool{}
@@ -273,12 +224,32 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 			}
 		}
 		option := Option{
-			OptionID: "op_" + rand.Text(), Changes: Changes(trip, candidate),
+			OptionID: "op_" + rand.Text(), Source: source, Label: label, Changes: Changes(trip, candidate),
 			SummaryBefore: trip.Summary, SummaryAfter: candidate.Summary,
 			Preview: Preview{Items: candidate.Items, Legs: candidate.Legs}, Candidate: candidate,
 		}
 		result.Options = append(result.Options, option)
 		result.Explanations[option.OptionID] = Explanation{Status: "pending"}
+		return nil
+	}
+
+	// アルゴリズムの案1: 順番はそのままで時刻を後ろにずらす。入らない予定は優先度の低い順に外れる。
+	if err := addOption(futureVisits, "algorithm", "順番はそのままで時刻をずらす"); err != nil {
+		return empty, err
+	}
+	// アルゴリズムの案2: 優先度が最も低い予定（同じなら滞在が長い方）を1つ外し、後の予定を守る。
+	if skip := lowestPriority(futureVisits); skip >= 0 {
+		selected := append(append([]Visit{}, futureVisits[:skip]...), futureVisits[skip+1:]...)
+		// 組み立てに失敗しても（Maps の一時的な失敗など）、作成済みの案は返す。
+		_ = addOption(selected, "algorithm", "「"+future[skip].Name+"」を外して後の予定を守る")
+	}
+	// Gemini の案: 近くの代替施設も使って、遅延箇所以降を組み直す。AI の応答の失敗や、
+	// 代替施設の詳細取得・経路検索の失敗はその案だけを飛ばし、作成済みの案は返す。
+	for _, proposal := range a.aiReplanProposals(ctx, trip, prefix, future, depart) {
+		if len(result.Options) >= MaxReplanOptions {
+			break
+		}
+		_ = addOption(proposal.Visits, "ai", proposal.Label)
 	}
 	for _, leg := range trip.Legs {
 		if leg.ToItemID == trip.Items[index+1].ItemID && leg.LineName != nil {
@@ -287,4 +258,140 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 		}
 	}
 	return result, nil
+}
+
+// 組み直し案の件数。AI の案は最大3案（API仕様）、アルゴリズムの案（最大2案）と合わせて最大5案。
+const (
+	MaxAIReplanOptions = 3
+	MaxReplanOptions   = 5
+)
+
+// lowestPriority は外す候補の位置を返す。must しかなければ -1。
+func lowestPriority(visits []Visit) int {
+	rank := map[string]int{"optional": 2, "want": 1}
+	best := -1
+	for i, visit := range visits {
+		r, ok := rank[visit.Priority]
+		if !ok {
+			continue
+		}
+		if best < 0 || r > rank[visits[best].Priority] || (r == rank[visits[best].Priority] && visit.StayMin > visits[best].StayMin) {
+			best = i
+		}
+	}
+	return best
+}
+
+type aiProposal struct {
+	Visits []Visit
+	Label  string
+}
+
+// aiReplanProposals は Gemini に遅延後の代替案を最大3つ作らせる。施設IDは enum で残りの予定と
+// 近くの代替施設に限り、正規化できない案は捨てる。Maps や Gemini の失敗時は空を返す。
+func (a *App) aiReplanProposals(ctx context.Context, trip Itinerary, prefix, future []Item, depart time.Time) []aiProposal {
+	if a.AI == nil {
+		return nil
+	}
+	current := prefix[len(prefix)-1]
+	origin, err := a.Maps.Details(ctx, current.PlaceID)
+	if err != nil {
+		return nil
+	}
+	alternatives, err := a.Maps.Search(ctx, "短時間で訪問できる近くの観光施設", &origin.Location)
+	if err != nil {
+		return nil
+	}
+	visits := map[string]Visit{}
+	prior := map[string]bool{}
+	for _, item := range prefix {
+		prior[item.PlaceID] = true
+	}
+	ids := []string{}
+	type remainingFact struct {
+		PlaceID  string `json:"placeId"`
+		Name     string `json:"name"`
+		Priority string `json:"priority"`
+		StayMin  int    `json:"stayMin"`
+		StartAt  string `json:"plannedStartAt"`
+	}
+	type alternativeFact struct {
+		PlaceID    string  `json:"placeId"`
+		Name       string  `json:"name"`
+		DistanceKm float64 `json:"distanceKmFromCurrent"`
+	}
+	remaining := []remainingFact{}
+	for _, item := range future {
+		visits[item.PlaceID] = Visit{PlaceID: item.PlaceID, Priority: item.Priority, StayMin: item.StayMin}
+		ids = append(ids, item.PlaceID)
+		remaining = append(remaining, remainingFact{PlaceID: item.PlaceID, Name: item.Name, Priority: item.Priority, StayMin: item.StayMin, StartAt: item.StartAt})
+	}
+	facts := []alternativeFact{}
+	for _, place := range alternatives {
+		if _, exists := visits[place.PlaceID]; exists || prior[place.PlaceID] {
+			continue
+		}
+		visits[place.PlaceID] = Visit{PlaceID: place.PlaceID, Priority: "want", StayMin: 30}
+		ids = append(ids, place.PlaceID)
+		facts = append(facts, alternativeFact{PlaceID: place.PlaceID, Name: place.Name, DistanceKm: math.Round(distance(origin.Location, place.Location)/100) / 10})
+	}
+	var output struct {
+		Options []struct {
+			Label    string   `json:"label"`
+			PlaceIDs []string `json:"placeIds"`
+		} `json:"options"`
+	}
+	schema := ObjectSchema(map[string]any{
+		"options": map[string]any{
+			"type": "array", "minItems": 1, "maxItems": MaxAIReplanOptions,
+			"items": ObjectSchema(map[string]any{
+				"label":    map[string]any{"type": "string"},
+				"placeIds": IDArraySchema(ids, 0, len(future)),
+			}),
+		},
+	})
+	prompt := Prompt{
+		Task: "遅延した旅程の、現在の予定より後ろの部分を組み直す案を最大3つ作ってください。",
+		Rules: []string{
+			"各案の placeIds は remaining と alternatives の placeId だけを使い、1案の中で重複させない。並びが訪問順になる。",
+			"priority が must の予定はできる限り残す。外す場合は want・optional を先に外す。",
+			"代替施設（alternatives）は、外した元の予定の数以内で、distanceKmFromCurrent が近いものを使う。",
+			"案どうしは考え方を変える（例: 代替施設に置き換える、順番を入れ替える、遠い予定をやめて近場で過ごす）。",
+			"最後に end へ end.arriveBy までに着けるようにする。",
+			"label は案の内容を20文字以内で表す（例: 近くの資料館に置き換え）。",
+		},
+		Data: map[string]any{
+			"current":      map[string]any{"name": current.Name, "delayedEndAt": depart.Format(time.RFC3339)},
+			"remaining":    remaining,
+			"alternatives": facts,
+			"end":          map[string]string{"name": trip.End.Name, "arriveBy": trip.End.ArriveBy},
+		},
+		Temperature: 0.4,
+	}
+	if err := a.AI.Ask(ctx, prompt, schema, &output); err != nil {
+		return nil
+	}
+	proposals := []aiProposal{}
+	for _, option := range output.Options {
+		selected := []Visit{}
+		seen := map[string]bool{}
+		for _, id := range option.PlaceIDs {
+			if visit, ok := visits[id]; ok && !seen[id] {
+				seen[id] = true
+				selected = append(selected, visit)
+			}
+		}
+		if len(option.PlaceIDs) == 0 || len(selected) != len(option.PlaceIDs) || len(selected) > len(future) {
+			continue
+		}
+		label := strings.TrimSpace(option.Label)
+		if !Text(label, 1, 30) {
+			label = "代替案"
+		}
+		proposals = append(proposals, aiProposal{Visits: selected, Label: label})
+		if len(proposals) >= MaxAIReplanOptions {
+			break
+		}
+	}
+	return proposals
 }
