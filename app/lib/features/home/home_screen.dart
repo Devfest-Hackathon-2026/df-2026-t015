@@ -6,8 +6,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../data/providers.dart';
 import '../../routing/routes.dart';
 import '../../widgets/common.dart';
+import '../itineraries/itinerary_groups.dart';
 
-/// 起動直後の振り分け。旅程があれば旅行日の新しいものを開き、なければ行き先の入力へ進む。
+/// 起動直後の振り分け。その日の旅程があれば「今日の旅程」を直接開き、
+/// なければ旅程一覧を開く（docs/iterinerary_app_ui_fac.docx 2 章）。
 class HomeScreen extends HookConsumerWidget {
   const HomeScreen({super.key});
 
@@ -20,7 +22,10 @@ class HomeScreen extends HookConsumerWidget {
       if (list == null) return null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted) return;
-        context.go(list.isEmpty ? Routes.plan : Routes.today(list.first.id));
+        final today = ItineraryGroups.from(list, DateTime.now()).today;
+        context.go(
+          today.isEmpty ? Routes.itineraries : Routes.today(today.first.id),
+        );
       });
       return null;
     }, [itineraries.value]);

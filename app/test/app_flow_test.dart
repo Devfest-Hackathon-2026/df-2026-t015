@@ -13,6 +13,11 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: IterineraryApp()));
     await tester.pumpAndSettle();
 
+    // 旅程一覧から今日の旅程を開く
+    expect(find.text(AppStrings.listTitle), findsOneWidget);
+    await tester.tap(find.text('みなと町 日帰り旅'));
+    await tester.pumpAndSettle();
+
     // 今日の旅程
     expect(find.text('みなと町 日帰り旅'), findsOneWidget);
     expect(find.text(AppStrings.todayDelayButton), findsOneWidget);

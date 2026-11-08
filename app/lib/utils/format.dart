@@ -40,6 +40,22 @@ abstract final class Format {
         : text;
   }
 
+  /// 11/23。date は YYYY-MM-DD。
+  static String monthDay(String date) {
+    final d = DateTime.parse(date);
+    return '${d.month}/${d.day}';
+  }
+
+  /// 土。date は YYYY-MM-DD。
+  static String weekday(String date) =>
+      _weekdays[DateTime.parse(date).weekday - DateTime.monday];
+
+  /// 12月3日
+  static String monthDayJa(DateTime dateTime) {
+    final d = dateTime.toLocal();
+    return '${d.month}月${d.day}日';
+  }
+
   /// TimeOfDay 相当（時・分）を HH:mm にする
   static String hhmm(int hour, int minute) =>
       '${hour.toString().padLeft(_pad, '0')}$_hhmmSeparator${minute.toString().padLeft(_pad, '0')}';
