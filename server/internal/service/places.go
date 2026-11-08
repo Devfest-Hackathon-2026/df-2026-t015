@@ -113,66 +113,101 @@ func (m *Maps) Detail(ctx context.Context, id string, date time.Time) (PlaceDeta
 	return detail, nil
 }
 
-// DayHours は date の営業時間を返す。currentOpeningHours（直近7日、臨時営業を含む）に
-// その日の区間があれば優先し、なければ通常営業時間の曜日で判定する。休みなら nil。
-// 区間が複数ある日は、最初に開く時刻と最後に閉まる時刻を返す。
+// DayHours は date（日本時間）の営業時間を返す。休みなら nil。
+//
+// 今日から7日以内で currentOpeningHours（臨時営業・臨時休業を含む）があればそれだけを使い、
+// periods が空配列なら臨時休業として nil を返す（通常営業時間には戻さない）。
+// それ以外は通常営業時間で判定する。
+//
+// 営業区間は開店日ではなく「その日に重なるか」で判定する。前日から続く深夜営業
+// （金曜22時〜土曜2時を土曜で取得など）は opensAt "00:00" として含める。
+// 区間が複数ある日は、その日の最初に開いている時刻と、最後に閉まる時刻（翌日にかかれば翌日の時刻）を返す。
 func DayHours(current, regular *Hours, date time.Time) *OpeningHours {
 	date = date.In(JST)
-	matchDate := func(point HourPoint) bool {
-		return point.Date != nil && point.Date.Year == date.Year() && point.Date.Month == int(date.Month()) && point.Date.Day == date.Day()
-	}
-	pick := func(hours *Hours, match func(HourPoint) bool) (*OpeningHours, bool) {
-		if hours == nil {
-			return nil, false
-		}
-		// 24時間営業は close のない区間1つで表される。
-		for _, period := range hours.Periods {
-			if period.Close == nil {
-				return &OpeningHours{OpensAt: "00:00", ClosesAt: "24:00"}, true
-			}
-		}
-		found := false
-		var opens, closes int
-		var closesText string
-		for _, period := range hours.Periods {
-			if !match(period.Open) {
-				continue
-			}
-			open := period.Open.Hour*60 + period.Open.Minute
-			end := period.Close.Hour*60 + period.Close.Minute
-			if period.Close.Day != period.Open.Day || end <= open {
-				end += 24 * 60
-			}
-			if !found || open < opens {
-				opens = open
-			}
-			if !found || end > closes {
-				closes = end
-				closesText = clockText(period.Close.Hour, period.Close.Minute)
-			}
-			found = true
-		}
-		if !found {
-			return nil, false
-		}
-		return &OpeningHours{OpensAt: clockText(opens/60, opens%60), ClosesAt: closesText}, true
-	}
-	// currentOpeningHours は今日から7日分。その範囲の日は、区間がなければ臨時休業として扱う。
+	day := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, JST)
 	today := time.Now().In(JST)
 	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, JST)
-	day := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, JST)
-	if current != nil && !day.Before(today) && day.Before(today.AddDate(0, 0, 7)) {
-		for _, period := range current.Periods {
-			if period.Open.Date != nil {
-				hours, _ := pick(current, matchDate)
-				return hours
+	// periods のキーがない（nil）場合は営業時間が不明なので、通常営業時間で判定する。
+	if current != nil && current.Periods != nil && !day.Before(today) && day.Before(today.AddDate(0, 0, 7)) {
+		return hoursOn(current, day)
+	}
+	return hoursOn(regular, day)
+}
+
+// hoursOn は hours の営業区間のうち、day（0時〜24時）に重なるものから営業時間を作る。
+func hoursOn(hours *Hours, day time.Time) *OpeningHours {
+	if hours == nil {
+		return nil
+	}
+	// 24時間営業は close のない区間1つで表される。
+	for _, period := range hours.Periods {
+		if period.Close == nil {
+			return &OpeningHours{OpensAt: "00:00", ClosesAt: "24:00"}
+		}
+	}
+	dayEnd := day.AddDate(0, 0, 1)
+	var opens, closes time.Time
+	for _, period := range hours.Periods {
+		for _, span := range periodSpans(period, day) {
+			if !span[1].After(day) || !span[0].Before(dayEnd) {
+				continue
+			}
+			start := span[0]
+			if start.Before(day) {
+				start = day
+			}
+			if opens.IsZero() || start.Before(opens) {
+				opens = start
+			}
+			if closes.IsZero() || span[1].After(closes) {
+				closes = span[1]
 			}
 		}
 	}
-	hours, _ := pick(regular, func(point HourPoint) bool { return point.Day == int(date.Weekday()) })
-	return hours
+	if opens.IsZero() {
+		return nil
+	}
+	closesText := closes.Format("15:04")
+	if closes.Equal(dayEnd) {
+		closesText = "24:00"
+	}
+	return &OpeningHours{OpensAt: opens.Format("15:04"), ClosesAt: closesText}
 }
 
-func clockText(hour, minute int) string {
-	return time.Date(2000, 1, 1, hour, minute, 0, 0, time.UTC).Format("15:04")
+// periodSpans は営業区間を、day の前後の週に置いた開店・閉店の日時にする。
+// 日付つきの区間（currentOpeningHours）はその日付だけ、曜日だけの区間は前週・今週・翌週に置く。
+func periodSpans(period Period, day time.Time) [][2]time.Time {
+	if period.Close == nil || !validPoint(period.Open) || !validPoint(*period.Close) {
+		return nil
+	}
+	clock := func(base time.Time, point HourPoint) time.Time {
+		return base.Add(time.Duration(point.Hour*60+point.Minute) * time.Minute)
+	}
+	if d := period.Open.Date; d != nil {
+		openDay := time.Date(d.Year, time.Month(d.Month), d.Day, 0, 0, 0, 0, JST)
+		closeDay := openDay.AddDate(0, 0, (period.Close.Day-period.Open.Day+7)%7)
+		if c := period.Close.Date; c != nil {
+			closeDay = time.Date(c.Year, time.Month(c.Month), c.Day, 0, 0, 0, 0, JST)
+		}
+		open, close := clock(openDay, period.Open), clock(closeDay, *period.Close)
+		if !close.After(open) {
+			close = close.AddDate(0, 0, 1)
+		}
+		return [][2]time.Time{{open, close}}
+	}
+	sunday := day.AddDate(0, 0, -int(day.Weekday()))
+	open := clock(sunday.AddDate(0, 0, period.Open.Day), period.Open)
+	close := clock(sunday.AddDate(0, 0, period.Close.Day), *period.Close)
+	if !close.After(open) {
+		close = close.AddDate(0, 0, 7)
+	}
+	spans := [][2]time.Time{}
+	for _, offset := range []int{-7, 0, 7} {
+		spans = append(spans, [2]time.Time{open.AddDate(0, 0, offset), close.AddDate(0, 0, offset)})
+	}
+	return spans
+}
+
+func validPoint(point HourPoint) bool {
+	return point.Day >= 0 && point.Day <= 6 && point.Hour >= 0 && point.Hour <= 24 && point.Minute >= 0 && point.Minute <= 59
 }
