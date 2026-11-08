@@ -19,6 +19,12 @@ type HourPoint struct {
 	Day    int `json:"day"`
 	Hour   int `json:"hour"`
 	Minute int `json:"minute"`
+	// Date は currentOpeningHours の区間にだけ入る、その区間の日付。
+	Date *struct {
+		Year  int `json:"year"`
+		Month int `json:"month"`
+		Day   int `json:"day"`
+	} `json:"date,omitempty"`
 }
 
 type Period struct {
@@ -40,7 +46,17 @@ type mapPlace struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
 	} `json:"location"`
-	Hours *Hours `json:"regularOpeningHours"`
+	Hours       *Hours `json:"regularOpeningHours"`
+	Current     *Hours `json:"currentOpeningHours"`
+	PrimaryType struct {
+		Text string `json:"text"`
+	} `json:"primaryTypeDisplayName"`
+	PriceRange *struct {
+		StartPrice *struct {
+			CurrencyCode string `json:"currencyCode"`
+			Units        string `json:"units"`
+		} `json:"startPrice"`
+	} `json:"priceRange"`
 }
 
 func (p mapPlace) place() (Place, error) {

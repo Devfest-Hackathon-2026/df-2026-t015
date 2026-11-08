@@ -91,3 +91,22 @@ API仕様が「複数の旅程、出発と終わり、地図からの選択」�
 - #6: `date`・`start`・`end` を任意で受け付ける。date を変えたら旅程全体を作り直す。
 - #7: 終わる場所に間に合わない案には `end_at_risk` を警告する（`end_time_exceeded` は廃止）。遅延で出発が遅れる移動の時刻もずらす。
 - #10・#11: 最後の予定の後は終わる場所までの移動を含めて判定する。#11 の insertAfterItemId は省略すると末尾に追加する。
+
+## 改訂で追加された API（b_update-api）
+
+- #12 GET /places/nearby: lat・lng（必須）、radius（100〜5000m、既定1000）、q（任意）。q がなければ Places Nearby Search、あれば Text Search を使い、範囲外を除いて最大20件。typeLabel は Places の primaryTypeDisplayName。
+- #13 GET /places/:placeId: date（任意、既定は今日）の営業時間を返す。直近7日は currentOpeningHours、それ以降は regularOpeningHours。料金は priceRange（円）があるときだけ estimate。
+- #14 PATCH /itineraries/:id: title（1〜100文字。仕様は1〜50文字だが、#3・#16 と揃えて100文字に統一）。If-Match 必須。
+- #15 DELETE /itineraries/:id: If-Match 必須。旅程と組み直し案を同じトランザクションで削除し、204。
+- #16 POST /itineraries/:id/copy: date 必須、title 任意。元の訪問順で新しい日付の営業時間・時刻表に組み直す。上限超過は 422 ITINERARY_LIMIT。
+- ルーターはパスごとに1つのハンドラーを登録し、その中でメソッドを振り分ける（`GET /places/{placeId}` とほかの `/places/*` の衝突を避けるため）。
+
+## Gemini 連携の作り込み（b_ai-inference）
+
+- 共通: プロンプトを「タスク・ルール・入力データ（JSON）」の形で組み立てる。施設IDは JSON スキーマの enum で入力の候補に限定し、スキーマに合わない応答は1回だけ再試行する。構造化（順番・選択）は temperature 0.2、文章は 0.4〜0.5。
+- #2: 検索語への分解 → Places で実在確認 → 候補から最大5件を選ぶ、の2段階。応答は {place, reason} だけ。
+- #3: 基準の順番（最近傍法＋2-opt）と AI の順番を両方組み、外した行き先（優先度で重み付け）・移動時間・到着時刻で比べる。AI の順番は正規化してから使う。
+- #6: 固定の予定は変えず、変更のない施設の相対順を保った基準の順番と、変更点を渡した AI の順番を比べる。
+- #7: アルゴリズムの案（時刻をずらす／優先度の低い予定を外す）と AI の案（代替施設を使う）をすべて返す。「最大3案」は AI の案の上限とし、アルゴリズムの案（最大2案）と合わせて最大5案を返す（利用者確認済み）。各案に source と label を追加。
+- #8: 変更点から事実を取り出し、AI は要約と変更ごとの理由の文章だけを作る。応答に reasons を追加。
+- #10: 前後の移動時間を除いた滞在可能時間で候補を絞り、施設の提案に加えて ideas（施設を決めない過ごし方）を返す。各提案に typeLabel と legToNext を追加。

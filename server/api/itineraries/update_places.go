@@ -18,8 +18,9 @@ func UpdatePlaces(app *service.App) http.HandlerFunc {
 		if err := service.Decode(w, r, &input); err != nil {
 			return err
 		}
-		if err := service.ValidateVisits(input.Places); err != nil {
-			return err
+		// 行き先の詳しい確認は Edit で行う（完了済み・滞在中の予定は滞在時間の範囲を確認しないため）。
+		if len(input.Places) < 1 || len(input.Places) > 10 {
+			return service.Invalid("places は1〜10件で指定してください")
 		}
 		old, err := app.Owned(r)
 		if err != nil {

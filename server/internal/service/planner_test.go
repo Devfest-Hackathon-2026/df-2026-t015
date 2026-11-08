@@ -8,18 +8,6 @@ import (
 
 func ref(value string) *string { return &value }
 
-func TestVisitOrderRejectsInventedAndDuplicateIDs(t *testing.T) {
-	visits := []Visit{{PlaceID: "a", Priority: "must", StayMin: 60}, {PlaceID: "b", Priority: "want", StayMin: 30}}
-	for _, ids := range [][]string{{"a", "fake"}, {"a", "a"}, {"a"}} {
-		if _, err := OrderedVisits(visits, ids); err == nil {
-			t.Fatalf("accepted %v", ids)
-		}
-	}
-	if ordered, err := OrderedVisits(visits, []string{"b", "a"}); err != nil || ordered[0].PlaceID != "b" {
-		t.Fatalf("%v %v", ordered, err)
-	}
-}
-
 func TestOpeningHours(t *testing.T) {
 	arrival := time.Date(2026, 11, 5, 12, 30, 0, 0, JST)
 	hours := &Hours{Periods: []Period{
@@ -115,5 +103,73 @@ func TestReaddedItemNoLongerDropped(t *testing.T) {
 	value := joinPrefix(old, nil, next, Start{})
 	if len(value.Dropped) != 1 || value.Dropped[0].PlaceID != "p2" {
 		t.Fatalf("included item remains dropped: %+v", value.Dropped)
+	}
+}
+
+func TestDayHours(t *testing.T) {
+	saturday := time.Date(2026, 11, 14, 0, 0, 0, 0, JST)
+	regular := &Hours{Periods: []Period{
+		{Open: HourPoint{Day: 6, Hour: 9}, Close: &HourPoint{Day: 6, Hour: 12}},
+		{Open: HourPoint{Day: 6, Hour: 14}, Close: &HourPoint{Day: 6, Hour: 18, Minute: 30}},
+	}}
+	if hours := DayHours(nil, regular, saturday); hours == nil || hours.OpensAt != "09:00" || hours.ClosesAt != "18:30" {
+		t.Fatalf("split day: %+v", hours)
+	}
+	if hours := DayHours(nil, regular, saturday.AddDate(0, 0, 1)); hours != nil {
+		t.Fatalf("closed day: %+v", hours)
+	}
+	if hours := DayHours(nil, &Hours{Periods: []Period{{Open: HourPoint{Day: 0}}}}, saturday); hours == nil || hours.ClosesAt != "24:00" {
+		t.Fatalf("always open: %+v", hours)
+	}
+	// 金曜22時〜土曜2時の深夜営業は、金曜では 22:00〜02:00、土曜では 00:00〜02:00 として返す。
+	night := &Hours{Periods: []Period{{Open: HourPoint{Day: 5, Hour: 22}, Close: &HourPoint{Day: 6, Hour: 2}}}}
+	if hours := DayHours(nil, night, saturday.AddDate(0, 0, -1)); hours == nil || hours.OpensAt != "22:00" || hours.ClosesAt != "02:00" {
+		t.Fatalf("overnight on its opening day: %+v", hours)
+	}
+	if hours := DayHours(nil, night, saturday); hours == nil || hours.OpensAt != "00:00" || hours.ClosesAt != "02:00" {
+		t.Fatalf("overnight carried into the next day: %+v", hours)
+	}
+	if hours := DayHours(nil, night, saturday.AddDate(0, 0, 1)); hours != nil {
+		t.Fatalf("overnight leaked into Sunday: %+v", hours)
+	}
+	// 土曜の深夜営業と日中の営業がある日は、その日の最初に開いている時刻と最後に閉まる時刻。
+	mixed := &Hours{Periods: append(append([]Period{}, regular.Periods...), night.Periods...)}
+	if hours := DayHours(nil, mixed, saturday); hours == nil || hours.OpensAt != "00:00" || hours.ClosesAt != "18:30" {
+		t.Fatalf("overnight and daytime: %+v", hours)
+	}
+
+	// 直近7日は currentOpeningHours を優先し、区間がない日は臨時休業として扱う。
+	today := time.Now().In(JST)
+	dated := func(t time.Time, hour int) HourPoint {
+		point := HourPoint{Day: int(t.Weekday()), Hour: hour}
+		point.Date = &struct {
+			Year  int `json:"year"`
+			Month int `json:"month"`
+			Day   int `json:"day"`
+		}{t.Year(), int(t.Month()), t.Day()}
+		return point
+	}
+	everyDay := &Hours{Periods: []Period{}}
+	for d := range 7 {
+		everyDay.Periods = append(everyDay.Periods, Period{Open: HourPoint{Day: d, Hour: 9}, Close: &HourPoint{Day: d, Hour: 17}})
+	}
+	special := dated(today, 15)
+	current := &Hours{Periods: []Period{{Open: dated(today, 11), Close: &special}}}
+	if hours := DayHours(current, everyDay, today); hours == nil || hours.OpensAt != "11:00" || hours.ClosesAt != "15:00" {
+		t.Fatalf("special hours: %+v", hours)
+	}
+	if hours := DayHours(current, everyDay, today.AddDate(0, 0, 1)); hours != nil {
+		t.Fatalf("closed by current hours: %+v", hours)
+	}
+	// periods が空配列なら、その7日間は営業しない（通常営業時間 9〜17時に戻さない）。
+	if hours := DayHours(&Hours{Periods: []Period{}}, everyDay, today); hours != nil {
+		t.Fatalf("empty current periods fell back to regular hours: %+v", hours)
+	}
+	// periods がない（営業時間が不明）なら通常営業時間を使う。7日より先も通常営業時間。
+	if hours := DayHours(&Hours{}, everyDay, today); hours == nil || hours.OpensAt != "09:00" {
+		t.Fatalf("missing current periods: %+v", hours)
+	}
+	if hours := DayHours(&Hours{Periods: []Period{}}, everyDay, today.AddDate(0, 0, 8)); hours == nil || hours.ClosesAt != "17:00" {
+		t.Fatalf("beyond current range: %+v", hours)
 	}
 }

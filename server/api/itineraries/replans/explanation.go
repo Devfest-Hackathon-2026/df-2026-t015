@@ -2,12 +2,15 @@ package replans
 
 import (
 	"context"
-	"encoding/json"
-	"github.com/create-alt/gen-TLE/server/internal/service"
 	"net/http"
 	"time"
+
+	"github.com/create-alt/gen-TLE/server/internal/service"
 )
 
+// Explanation は GET /itineraries/:id/replans/:replanId/explanation（F-05）。
+// 組み直し案の変更点からサーバーが事実を取り出し、Gemini が要約（text）と変更ごとの理由（reasons）にする。
+// 初回の取得で生成して保存し、生成中は pending、失敗したら failed を返す（案の確定はできる）。
 func Explanation(app *service.App) http.HandlerFunc {
 	return service.Handle(func(w http.ResponseWriter, r *http.Request) error {
 		optionID := r.URL.Query().Get("optionId")
@@ -33,18 +36,7 @@ func Explanation(app *service.App) http.HandlerFunc {
 			return err
 		}
 		if claimed {
-			data, _ := json.Marshal(option)
-			var output struct {
-				Text string `json:"text"`
-			}
-			schema := service.ObjectSchema(map[string]any{"text": map[string]string{"type": "string"}})
-			generationErr := app.AI.Generate(r.Context(), "次の旅程変更の理由を日本語で短く説明してください。差分にない事実は追加しないでください。\n"+string(data), schema, &output)
-			status := "ready"
-			if generationErr != nil || !service.Text(output.Text, 1, 2000) {
-				status = "failed"
-				output.Text = ""
-			}
-			final := service.Explanation{Status: status, Text: output.Text}
+			final, _ := app.Explain(r.Context(), value, *option)
 			// キャンセル後も処理権を解放し、ほかの取得が pending のままにならないようにする。
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 3*time.Second)
 			defer cancel()

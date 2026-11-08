@@ -32,7 +32,7 @@ func TestGeminiRejectsEmptyAndInvalidJSON(t *testing.T) {
 		var output struct {
 			Text string `json:"text"`
 		}
-		if err := ai.Generate(context.Background(), "test", ObjectSchema(map[string]any{"text": map[string]any{"type": "string"}}), &output); err == nil {
+		if err := ai.Ask(context.Background(), Prompt{Task: "test"}, ObjectSchema(map[string]any{"text": map[string]any{"type": "string"}}), &output); err == nil {
 			t.Fatalf("accepted %s", body)
 		}
 	}
@@ -50,7 +50,7 @@ func TestGeminiStructuredResponse(t *testing.T) {
 	var output struct {
 		Text string `json:"text"`
 	}
-	if err := ai.Generate(context.Background(), "test", ObjectSchema(map[string]any{"text": map[string]any{"type": "string"}}), &output); err != nil || output.Text != "理由" {
+	if err := ai.Ask(context.Background(), Prompt{Task: "test"}, ObjectSchema(map[string]any{"text": map[string]any{"type": "string"}}), &output); err != nil || output.Text != "理由" {
 		t.Fatalf("output=%+v err=%v", output, err)
 	}
 }

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"sort"
 	"time"
 
@@ -21,6 +20,12 @@ func At(date, clock string) (time.Time, error) {
 }
 
 func ValidateVisits(visits []Visit) error {
+	return validateVisits(visits, nil)
+}
+
+// validateVisits は行き先を確認する。fixedStay にある施設（完了済み・滞在中の予定）は、
+// 遅延で滞在が延びて480分を超えることがあるため、同じ滞在時間なら範囲を確認しない。
+func validateVisits(visits []Visit, fixedStay map[string]int) error {
 	if len(visits) < 1 || len(visits) > 10 {
 		return Invalid("places は1〜10件で指定してください")
 	}
@@ -33,6 +38,9 @@ func ValidateVisits(visits []Visit) error {
 		if visit.Priority != "must" && visit.Priority != "want" && visit.Priority != "optional" {
 			return Invalid("priority が不正です")
 		}
+		if stay, fixed := fixedStay[visit.PlaceID]; fixed && stay == visit.StayMin {
+			continue
+		}
 		if visit.StayMin < 10 || visit.StayMin > 480 {
 			return Invalid("stayMin は10〜480分で指定してください")
 		}
@@ -42,6 +50,9 @@ func ValidateVisits(visits []Visit) error {
 
 // MaxItineraries は1人が保存できる旅程の件数。
 const MaxItineraries = 20
+
+// MaxTitleLength は旅程名の最大文字数。作成・名前の変更・コピーで共通。
+const MaxTitleLength = 100
 
 func validEndpoint(id *string, location *Point, name, label string) error {
 	if id != nil {
@@ -81,8 +92,8 @@ func ValidateEnd(date string, end End) (time.Time, error) {
 }
 
 func ValidatePlan(input PlanInput) error {
-	if !Text(input.Title, 1, 100) {
-		return Invalid("title が不正です")
+	if err := ValidateTitle(input.Title); err != nil {
+		return err
 	}
 	start, err := ValidateStart(input.Date, input.Start)
 	if err != nil {
@@ -98,26 +109,6 @@ func ValidatePlan(input PlanInput) error {
 	return ValidateVisits(input.Places)
 }
 
-func OrderedVisits(visits []Visit, ids []string) ([]Visit, error) {
-	if len(ids) != len(visits) {
-		return nil, Upstream()
-	}
-	byID := map[string]Visit{}
-	for _, visit := range visits {
-		byID[visit.PlaceID] = visit
-	}
-	ordered := make([]Visit, 0, len(ids))
-	for _, id := range ids {
-		visit, ok := byID[id]
-		if !ok {
-			return nil, Upstream()
-		}
-		ordered = append(ordered, visit)
-		delete(byID, id)
-	}
-	return ordered, nil
-}
-
 func OpenAt(hours *Hours, arrival time.Time, stay int) (time.Time, *OpeningHours, bool) {
 	if hours == nil {
 		return arrival, nil, true
@@ -131,7 +122,7 @@ func OpenAt(hours *Hours, arrival time.Time, stay int) (time.Time, *OpeningHours
 			continue
 		}
 		if period.Close == nil {
-			return arrival, &OpeningHours{OpensAt: "00:00", ClosesAt: "00:00"}, true
+			return arrival, &OpeningHours{OpensAt: "00:00", ClosesAt: "24:00"}, true
 		}
 		close := *period.Close
 		if close.Day < 0 || close.Day > 6 || close.Hour < 0 || close.Hour > 23 || close.Minute < 0 || close.Minute > 59 {
@@ -209,6 +200,7 @@ func fillEndpoints(input *PlanInput, places map[string]Place) {
 	}
 }
 
+// Plan は POST /itineraries の旅程を作る。基準の順番（最近傍法＋2-opt）と Gemini の順番を両方組み、良い方を採る。
 func (a *App) Plan(ctx context.Context, input PlanInput) (Itinerary, error) {
 	if err := ValidatePlan(input); err != nil {
 		return Itinerary{}, err
@@ -218,19 +210,74 @@ func (a *App) Plan(ctx context.Context, input PlanInput) (Itinerary, error) {
 		return Itinerary{}, err
 	}
 	fillEndpoints(&input, places)
-	data, _ := json.Marshal(map[string]any{"request": input, "verifiedPlaces": places})
-	var output struct {
-		PlaceIDs []string `json:"placeIds"`
+	base := NearestNeighborOrder(*input.Start.Location, input.End.Location, input.Places, places)
+	return a.arrange(ctx, arrangeRequest{Input: input, Places: places, Base: base, Prompt: orderPrompt(input, places, base, nil)})
+}
+
+// visitFact は AI に渡す行き先の情報。営業時間は旅行日のもの。
+type visitFact struct {
+	PlaceID      string        `json:"placeId"`
+	Name         string        `json:"name"`
+	Priority     string        `json:"priority"`
+	StayMin      int           `json:"stayMin"`
+	OpeningHours *OpeningHours `json:"openingHours"`
+}
+
+// editContext は編集時に AI に渡す、変更されていない部分と変更点。
+type editContext struct {
+	FixedItems   []string `json:"fixedItems"`
+	CurrentOrder []string `json:"currentOrder"`
+	Added        []string `json:"added"`
+	Removed      []string `json:"removed"`
+	Updated      []string `json:"updated"`
+}
+
+// orderPrompt は訪問順を尋ねるプロンプト。edit があれば部分的な変更として扱うよう指示する。
+func orderPrompt(input PlanInput, places map[string]Place, base []Visit, edit *editContext) Prompt {
+	day, _ := time.ParseInLocation("2006-01-02", input.Date, JST)
+	facts := []visitFact{}
+	points := map[string]Point{}
+	for _, visit := range input.Places {
+		place := places[visit.PlaceID]
+		facts = append(facts, visitFact{PlaceID: visit.PlaceID, Name: place.Name, Priority: visit.Priority, StayMin: visit.StayMin, OpeningHours: DayHours(nil, place.Hours, day)})
+		points[visit.PlaceID] = place.Location
 	}
-	err = a.AI.Generate(ctx, "次の行き先をすべて1回ずつ訪問する順番を提案してください。必須の施設の成立を優先し、移動を抑えてください。最後に終わる場所（request.end）へ移動することも考慮してください。placeIds に入力の全施設IDを重複なく入れてください。\n"+string(data), ObjectSchema(map[string]any{"placeIds": StringArraySchema()}), &output)
-	if err != nil {
-		return Itinerary{}, err
+	if input.Start.Location != nil {
+		points["start"] = *input.Start.Location
 	}
-	ordered, err := OrderedVisits(input.Places, output.PlaceIDs)
-	if err != nil {
-		return Itinerary{}, err
+	if input.End.Location != nil {
+		points["end"] = *input.End.Location
 	}
-	return a.Build(ctx, input, places, ordered, BuildOptions{})
+	baseline := make([]string, len(base))
+	for i, visit := range base {
+		baseline[i] = visit.PlaceID
+	}
+	data := map[string]any{
+		"date":          input.Date,
+		"start":         map[string]string{"name": input.Start.Name, "departAt": input.Start.DepartAt},
+		"end":           map[string]string{"name": input.End.Name, "arriveBy": input.End.ArriveBy},
+		"places":        facts,
+		"distanceKm":    distanceTable(points),
+		"baselineOrder": baseline,
+	}
+	rules := []string{
+		"placeIds には places の placeId をすべて1回ずつ入れる。",
+		"priority が must の施設を、営業時間内かつ end.arriveBy までに終わる位置に必ず置く。want、optional の順に優先する。",
+		"openingHours が早く閉まる施設や遅く開く施設は、営業時間に合う位置に置く。null は営業時間が不明という意味。",
+		"distanceKm（start・end・施設間の直線距離）を見て、行ったり来たりしない順にする。最後の施設から end へ向かうことも考える。",
+		"baselineOrder は直線距離だけで作った参考の順番。営業時間や優先度で不都合がなければ大きく変えなくてよい。",
+	}
+	task := "日帰り旅程の訪問順を決めてください。"
+	if edit != nil {
+		data["edit"] = edit
+		task = "編集された旅程の、まだ訪れていない部分の訪問順を決めてください。"
+		rules = append(rules,
+			"edit.fixedItems は訪問済み・滞在中で変更できない予定。出力には含めない。start はその最後の予定の場所。",
+			"edit.currentOrder のうち、変更されていない施設の相対的な順番はなるべく保つ（部分的な変更にとどめる）。",
+			"edit.added の施設は、移動が増えにくい位置に入れる。edit.updated は優先度や滞在時間が変わった施設で、必要なら位置を入れ替える。",
+		)
+	}
+	return Prompt{Task: task, Rules: rules, Data: data, Temperature: 0.2}
 }
 
 func infeasible(ids ...string) *Error {
@@ -355,6 +402,8 @@ func (a *App) schedule(ctx context.Context, input PlanInput, places map[string]P
 type BuildOptions struct {
 	DropMust bool
 	LateEnd  bool
+	// Cache は経路のキャッシュ。複数の順番を試すときに共有して Routes の呼び出しを減らす。
+	Cache map[string]Leg
 }
 
 func errorCode(err error) string {
@@ -365,7 +414,10 @@ func errorCode(err error) string {
 }
 
 func (a *App) Build(ctx context.Context, input PlanInput, places map[string]Place, order []Visit, options BuildOptions) (Itinerary, error) {
-	cache := map[string]Leg{}
+	cache := options.Cache
+	if cache == nil {
+		cache = map[string]Leg{}
+	}
 	selected := []Visit{}
 	remaining := []Visit{}
 	musts := []Visit{}

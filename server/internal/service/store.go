@@ -254,6 +254,39 @@ func (s *FirestoreStore) Update(ctx context.Context, uid, id string, version int
 	return storeError(err)
 }
 
+// Delete は旅程と、その旅程の組み直し案を1つのトランザクションで削除する。
+// 本人の旅程でなければ 404、version が違えば 409。
+func (s *FirestoreStore) Delete(ctx context.Context, uid, id string, version int) error {
+	ref := s.Client.Collection("itineraries").Doc(id)
+	err := s.Client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(ref)
+		if err != nil {
+			return err
+		}
+		var record itineraryRecord
+		if err := doc.DataTo(&record); err != nil {
+			return err
+		}
+		if err := record.check(uid, time.Now()); err != nil {
+			return err
+		}
+		if record.Data.Version != version {
+			return Conflict()
+		}
+		replans, err := tx.Documents(s.Client.Collection("replans").Where("itineraryId", "==", id)).GetAll()
+		if err != nil {
+			return err
+		}
+		for _, replan := range replans {
+			if err := tx.Delete(replan.Ref); err != nil {
+				return err
+			}
+		}
+		return tx.Delete(ref)
+	})
+	return storeError(err)
+}
+
 func (s *FirestoreStore) SaveReplan(ctx context.Context, uid string, value *Replan) error {
 	expires, err := time.Parse(time.RFC3339, value.ExpiresAt)
 	if err != nil {

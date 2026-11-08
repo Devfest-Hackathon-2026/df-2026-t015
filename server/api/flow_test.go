@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -38,6 +39,16 @@ func (s *flowStore) List(context.Context, string, int, string) (service.Itinerar
 	return service.ItineraryPage{Itineraries: []service.ItineraryEntry{{ID: s.trip.ID}}}, nil
 }
 func (s *flowStore) Count(context.Context, string) (int, error) { return s.count, nil }
+func (s *flowStore) Delete(ctx context.Context, uid, id string, version int) error {
+	if id != s.trip.ID {
+		return service.NotFound()
+	}
+	if version != s.trip.Version {
+		return service.Conflict()
+	}
+	s.trip = service.Itinerary{}
+	return nil
+}
 func (s *flowStore) Update(ctx context.Context, uid, id string, version int, value *service.Itinerary) error {
 	if version != s.trip.Version {
 		return service.Conflict()
@@ -81,57 +92,72 @@ func (s *flowStore) Accept(ctx context.Context, uid, id, rid, option string, ver
 
 type flowTransport struct{}
 
+// schemaNode は Gemini に送られた JSON スキーマの一部。テストの偽の Gemini が enum から答えを作るのに使う。
+type schemaNode struct {
+	Properties map[string]*schemaNode `json:"properties"`
+	Items      *schemaNode            `json:"items"`
+	Enum       []string               `json:"enum"`
+}
+
 func (flowTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	var data any
 	switch {
 	case strings.HasSuffix(r.URL.Path, "places:autocomplete"):
 		data = map[string]any{"suggestions": []any{map[string]any{"placePrediction": map[string]any{"placeId": "p1", "structuredFormat": map[string]any{"mainText": map[string]string{"text": "公園"}, "secondaryText": map[string]string{"text": "東京都"}}}}}}
+	case strings.HasSuffix(r.URL.Path, "places:searchNearby"):
+		data = map[string]any{"places": []any{
+			map[string]any{"id": "near", "displayName": map[string]string{"text": "山あいの駅"}, "location": map[string]float64{"latitude": 35.001, "longitude": 139}, "primaryTypeDisplayName": map[string]string{"text": "駅"}},
+			map[string]any{"id": "far", "displayName": map[string]string{"text": "遠くの駅"}, "location": map[string]float64{"latitude": 36, "longitude": 139}},
+		}}
 	case strings.HasSuffix(r.URL.Path, "places:searchText"):
 		data = map[string]any{"places": []any{map[string]any{"id": "p3", "displayName": map[string]string{"text": "公園3"}, "location": map[string]int{"latitude": 35, "longitude": 139}}}}
 	case strings.HasPrefix(r.URL.Path, "/v1/places/"):
 		id := strings.TrimPrefix(r.URL.Path, "/v1/places/")
-		data = map[string]any{"id": id, "displayName": map[string]string{"text": id}, "location": map[string]int{"latitude": 35, "longitude": 139}}
+		place := map[string]any{"id": id, "displayName": map[string]string{"text": id}, "location": map[string]int{"latitude": 35, "longitude": 139}}
+		if id == "onsen" {
+			// 土曜（day 6）だけ 10:00〜21:00 に営業する温泉
+			place["primaryTypeDisplayName"] = map[string]string{"text": "温泉"}
+			place["priceRange"] = map[string]any{"startPrice": map[string]string{"currencyCode": "JPY", "units": "600"}}
+			place["regularOpeningHours"] = map[string]any{"periods": []any{map[string]any{"open": map[string]int{"day": 6, "hour": 10}, "close": map[string]int{"day": 6, "hour": 21}}}}
+		}
+		data = place
 	case strings.Contains(r.URL.Path, "computeRoutes"):
 		data = map[string]any{"routes": []any{map[string]string{"duration": "600s"}}}
 	case strings.Contains(r.URL.Path, "generateContent"):
 		var request struct {
-			Contents []struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"contents"`
 			Config struct {
-				Schema struct {
-					Properties map[string]any `json:"properties"`
-				} `json:"responseJsonSchema"`
+				Schema schemaNode `json:"responseJsonSchema"`
 			} `json:"generationConfig"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			return nil, err
 		}
+		properties := request.Config.Schema.Properties
 		var output any
 		switch {
-		case request.Config.Schema.Properties["queries"] != nil:
-			output = map[string]any{"queries": []any{map[string]string{"query": "公園", "reason": "散歩に合う"}}}
-		case request.Config.Schema.Properties["placeIds"] != nil:
-			prompt := request.Contents[0].Parts[0].Text
-			var data struct {
-				Request service.PlanInput `json:"request"`
+		case properties["queries"] != nil:
+			output = map[string]any{"queries": []any{map[string]string{"query": "公園", "intent": "散歩したい"}, map[string]string{"query": " 公園 ", "intent": "重複"}}}
+		case properties["candidates"] != nil:
+			ids := properties["candidates"].Items.Properties["placeId"].Enum
+			output = map[string]any{"candidates": []any{map[string]string{"placeId": ids[0], "reason": "散歩に合う公園"}, map[string]string{"placeId": "invented", "reason": "存在しない"}}}
+		case properties["placeIds"] != nil:
+			output = map[string]any{"placeIds": properties["placeIds"].Items.Enum}
+		case properties["options"] != nil:
+			ids := properties["options"].Items.Properties["placeIds"].Items.Enum
+			output = map[string]any{"options": []any{map[string]any{"label": "同じ順番", "placeIds": ids[:1]}, map[string]any{"label": "近くの施設に置き換え", "placeIds": ids[len(ids)-1:]}}}
+		case properties["summary"] != nil:
+			reasons := []any{}
+			if ids := properties["reasons"].Items.Properties["itemId"].Enum; len(ids) > 0 {
+				reasons = append(reasons, map[string]string{"itemId": ids[0], "reason": "40分の遅れに合わせて開始を遅らせました。"})
 			}
-			if err := json.Unmarshal([]byte(prompt[strings.Index(prompt, "{"):]), &data); err != nil {
-				return nil, err
+			output = map[string]any{"summary": "遅延に合わせて時刻を変更しました。", "reasons": reasons}
+		case properties["ideas"] != nil:
+			result := map[string]any{"ideas": []any{map[string]any{"title": "駅前を散歩する", "description": "次の予定の近くを歩いて過ごします。", "durationMin": 30}, map[string]any{"title": "長すぎる案", "description": "空き時間を超える", "durationMin": 600}}}
+			if properties["suggestions"] != nil {
+				id := properties["suggestions"].Items.Properties["placeId"].Enum[0]
+				result["suggestions"] = []any{map[string]any{"placeId": id, "reason": "近くで散歩できる", "stayMin": 120}}
 			}
-			ids := []string{}
-			for _, visit := range data.Request.Places {
-				ids = append(ids, visit.PlaceID)
-			}
-			output = map[string]any{"placeIds": ids}
-		case request.Config.Schema.Properties["options"] != nil:
-			output = map[string]any{"options": []any{map[string]any{"placeIds": []string{"p2"}}, map[string]any{"placeIds": []string{"p3"}}}}
-		case request.Config.Schema.Properties["text"] != nil:
-			output = map[string]string{"text": "遅延に合わせて時刻を変更しました。"}
-		case request.Config.Schema.Properties["suggestions"] != nil:
-			output = map[string]any{"suggestions": []any{map[string]any{"placeId": "p3", "reason": "近くで散歩できる", "stayMin": 30}}}
+			output = result
 		default:
 			return nil, fmt.Errorf("unexpected schema")
 		}
@@ -169,7 +195,13 @@ func TestAPIFlow(t *testing.T) {
 		}
 	}
 	call("GET", "/places/autocomplete?q=公", "", "", 200, nil)
-	call("POST", "/places/interpret", `{"text":"公園を散歩したい"}`, "", 200, nil)
+	var interpreted struct {
+		Candidates []service.Interpreted `json:"candidates"`
+	}
+	call("POST", "/places/interpret", `{"text":"公園を散歩したい"}`, "", 200, &interpreted)
+	if len(interpreted.Candidates) != 1 || interpreted.Candidates[0].Place.PlaceID != "p3" || interpreted.Candidates[0].Reason != "散歩に合う公園" {
+		t.Fatalf("%+v", interpreted)
+	}
 	var trip service.Itinerary
 	// 地図で選んだ施設ではない地点も出発地・終わる場所にできる。
 	var mapTrip service.Itinerary
@@ -194,11 +226,21 @@ func TestAPIFlow(t *testing.T) {
 	delay := 40
 	body, _ := json.Marshal(service.ReplanInput{CurrentItemID: trip.Items[0].ItemID, DelayMin: &delay})
 	call("POST", "/itineraries/trip/replans", string(body), "", 200, &proposal)
-	if len(proposal.Options) != 2 {
-		t.Fatalf("%+v", proposal)
+	// アルゴリズムの案（時刻をずらす、優先度の低い予定を外す）と、Gemini の代替案をすべて返す。
+	// Gemini の1案目はアルゴリズムの案1と同じ結果になるため1つにまとまる。
+	sources := []string{}
+	for _, option := range proposal.Options {
+		sources = append(sources, option.Source+":"+option.Label)
+	}
+	if strings.Join(sources, ",") != "algorithm:順番はそのままで時刻をずらす,algorithm:「p2」を外して後の予定を守る,ai:近くの施設に置き換え" {
+		t.Fatalf("%v", sources)
 	}
 	optionID := proposal.Options[0].OptionID
-	call("GET", "/itineraries/trip/replans/rp/explanation?optionId="+optionID, "", "", 200, nil)
+	var explanation service.Explanation
+	call("GET", "/itineraries/trip/replans/rp/explanation?optionId="+optionID, "", "", 200, &explanation)
+	if explanation.Status != "ready" || explanation.Text == "" || len(explanation.Reasons) != 1 || explanation.Reasons[0].Type != "retime" {
+		t.Fatalf("%+v", explanation)
+	}
 	accept, _ := json.Marshal(map[string]string{"optionId": optionID})
 	call("POST", "/itineraries/trip/replans/rp/accept", string(accept), "2", 200, &trip)
 	if trip.Items[0].Status != "current" {
@@ -224,11 +266,10 @@ func TestAPIFlow(t *testing.T) {
 	removeCurrent, _ := json.Marshal(map[string]any{"places": visits[1:]})
 	call("PUT", "/itineraries/trip/places", string(removeCurrent), "5", 400, nil)
 	after := trip.Items[len(trip.Items)-1].ItemID
-	var suggestions struct {
-		Suggestions []service.Suggestion `json:"suggestions"`
-	}
+	var suggestions service.SuggestResult
 	call("GET", "/itineraries/trip/suggestions?from=2026-11-14T13:00:00%2B09:00&to=2026-11-14T14:00:00%2B09:00&afterItemId="+after, "", "", 200, &suggestions)
-	if len(suggestions.Suggestions) != 1 {
+	// 60分の空き時間から前後の移動（各10分）を除いた40分に、AI の滞在120分を収める。
+	if len(suggestions.Suggestions) != 1 || suggestions.Suggestions[0].Place.PlaceID != "near" || suggestions.Suggestions[0].StayMin != 40 || suggestions.Suggestions[0].LegToNext.DurationMin != 10 || len(suggestions.Ideas) != 1 {
 		t.Fatalf("%+v", suggestions)
 	}
 	add, _ := json.Marshal(service.AddInput{PlaceID: "p3", Priority: "optional", StayMin: 30, InsertAfterItemID: after})
@@ -246,4 +287,35 @@ func TestAPIFlow(t *testing.T) {
 	if trip.Date != "2026-11-21" || trip.Items[0].Status != "upcoming" || trip.End.ArriveBy != "18:00" || trip.End.Name != "p1" || trip.ExpiresAt != "2026-12-21T00:00:00+09:00" {
 		t.Fatalf("%+v", trip)
 	}
+	var nearby struct {
+		Places []service.NearbyPlace `json:"places"`
+	}
+	call("GET", "/places/nearby?lat=35&lng=139&radius=500", "", "", 200, &nearby)
+	if len(nearby.Places) != 1 || nearby.Places[0].TypeLabel != "駅" {
+		t.Fatalf("%+v", nearby)
+	}
+	var detail service.PlaceDetail
+	call("GET", "/places/onsen?date=2026-11-14", "", "", 200, &detail)
+	if detail.TypeLabel != "温泉" || detail.OpeningHours == nil || detail.OpeningHours.ClosesAt != "21:00" || detail.Price.Amount == nil || *detail.Price.Amount != 600 {
+		t.Fatalf("%+v", detail)
+	}
+	call("GET", "/places/onsen?date=2026-11-15", "", "", 200, &detail)
+	if detail.OpeningHours != nil {
+		t.Fatalf("closed day: %+v", detail.OpeningHours)
+	}
+	version := strconv.Itoa(trip.Version)
+	call("PATCH", "/itineraries/trip", `{"title":"山あいの温泉町めぐり"}`, version, 200, &trip)
+	if trip.Title != "山あいの温泉町めぐり" || strconv.Itoa(trip.Version) == version {
+		t.Fatalf("%+v", trip)
+	}
+	var copied service.Itinerary
+	store.count = service.MaxItineraries
+	call("POST", "/itineraries/trip/copy", `{"date":"2026-12-12"}`, "", 422, nil)
+	store.count = 0
+	call("POST", "/itineraries/trip/copy", `{"date":"2026-12-12"}`, "", 201, &copied)
+	if copied.Date != "2026-12-12" || copied.Title != trip.Title || len(copied.Items) != len(trip.Items) || copied.Items[0].Status != "upcoming" || copied.End.ArriveBy != trip.End.ArriveBy || copied.Version != 1 {
+		t.Fatalf("%+v", copied)
+	}
+	call("DELETE", "/itineraries/trip", "", "1", 204, nil)
+	call("GET", "/itineraries/trip", "", "", 404, nil)
 }
