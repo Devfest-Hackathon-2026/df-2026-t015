@@ -63,6 +63,42 @@ curl -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
 
 `FIREBASE_ID_TOKEN` はクライアントのFirebase匿名ログイン後に取得したIDトークンです。APIキーやAdmin SDK用の認証JSONではありません。`/healthz` 以外は認証必須です。
 
+## 公開（Cloud Run と Firebase Hosting）
+
+Go の API サーバーは Cloud Run で動かし、Flutter の Web 版は Firebase Hosting で配信します。リポジトリ直下の `firebase.json` で、Hosting の `/api/**` を Cloud Run のサービス `iterinerary-api`（asia-northeast1）に転送します。アプリと API が同じドメインになるので、CORS は要りません。
+
+```
+ブラウザ ─ https://<プロジェクト>.web.app/          → Firebase Hosting（app/build/web）
+        └ https://<プロジェクト>.web.app/api/...   → Cloud Run（server/、API_BASE_PATH=/api で /api を外して処理）
+```
+
+1. Cloud Run が使うサービスアカウントを作り、ロールを付けます。Firestore 用の「Cloud Datastore ユーザー」が必要です。API キーを使わない場合（ADC）は、「Vertex AI ユーザー」と「Service Usage ユーザー」も付けます。
+2. API キーを使う場合は、Secret Manager に入れます（`gcloud secrets create gemini-api-key --data-file=-` など）。サービスアカウントには「Secret Manager のシークレット アクセサー」を付けます。
+3. `server/Dockerfile` でイメージを作り、デプロイします。
+
+```sh
+gcloud run deploy iterinerary-api --source server --region asia-northeast1 \
+  --service-account <サービスアカウント> --allow-unauthenticated \
+  --set-env-vars FIREBASE_PROJECT_ID=<プロジェクトID>,GEMINI_MODEL=<モデル名>,API_BASE_PATH=/api \
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GOOGLE_MAPS_API_KEY=maps-api-key:latest
+```
+
+- `--allow-unauthenticated` は、Hosting から転送されたリクエストを Cloud Run が受け付けるために必要です。利用者の確認は、サーバーが Firebase の ID トークンで行います。
+- ADC で動かす場合は、`--set-secrets` を外します（キーがなければ、サービスアカウントの権限で Vertex AI と Places / Routes を呼びます）。
+- Firebase Hosting から Cloud Run への転送は、60 秒で打ち切られます。
+
+4. アプリをビルドして、Hosting・Firestore のルール・インデックスを反映します（リポジトリ直下で実行）。
+
+```sh
+cd app
+flutterfire configure --project=<プロジェクトID>
+flutter build web --release --dart-define=USE_MOCK_API=false --dart-define=API_BASE_URL=https://<プロジェクトID>.web.app/api
+cd ..
+firebase deploy --only hosting,firestore
+```
+
+Hosting を通さず、ほかのオリジン（`flutter run -d chrome` の開発用サーバーなど）から直接呼ぶ場合は、`CORS_ALLOWED_ORIGINS` に許可するオリジンをカンマ区切りで指定します（例：`http://localhost:*`、`https://<プロジェクトID>.web.app`）。
+
 ## 実装の構成
 
 - `cmd/server`: 設定の確認、起動、終了処理。
