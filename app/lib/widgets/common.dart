@@ -49,11 +49,15 @@ class BackTopBar extends StatelessWidget {
     required this.title,
     required this.onBack,
     this.backLabel = AppStrings.back,
+    this.icon = Icons.chevron_left,
   });
 
   final String title;
   final VoidCallback onBack;
   final String backLabel;
+
+  /// 戻るボタンのアイコン。作るのをやめる画面では閉じる（×）にする
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +77,7 @@ class BackTopBar extends StatelessWidget {
             child: IconButton(
               tooltip: backLabel,
               onPressed: onBack,
-              icon: Icon(Icons.chevron_left, size: tokens.iconSize),
+              icon: Icon(icon, size: tokens.iconSize),
             ),
           ),
           Text(title, style: context.texts.titleMedium),

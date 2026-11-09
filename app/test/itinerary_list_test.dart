@@ -93,7 +93,6 @@ void main() {
     expect(find.text('島の港町 日帰り'), findsOneWidget);
     expect(find.textContaining(AppStrings.listExpiresSuffix), findsOneWidget);
     expect(find.text(AppStrings.listCreate), findsOneWidget);
-    // 旅程を作る画面が未完成のため、当面は押せない
     expect(
       tester
           .widget<FilledButton>(
@@ -103,7 +102,7 @@ void main() {
             ),
           )
           .onPressed,
-      isNull,
+      isNotNull,
     );
 
     // 「…」→ 削除 → 確認してから消える

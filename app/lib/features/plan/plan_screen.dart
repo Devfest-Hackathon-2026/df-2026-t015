@@ -22,6 +22,10 @@ const _defaultStayMin = 60;
 const _defaultPriority = Priority.want;
 const _stayChoices = [30, 60, 90, 120, 180, 240];
 const _datePickerRange = Duration(days: 365);
+const _japanUtcOffset = Duration(hours: 9);
+
+/// 名前が空欄のとき、自動でつける名前に使う行き先の数
+const _autoTitlePlaceCount = 2;
 
 /// 行き先 1 件の入力
 @immutable
@@ -46,9 +50,47 @@ class PlanEntry {
       PlaceInput(placeId: place.placeId, priority: priority, stayMin: stayMin);
 }
 
-/// 3.1 行き先と優先度（F-01、F-02）
+/// 出発地・終わる場所（API の Endpoint）。
 ///
-/// [itineraryId] があれば既存の旅程の行き先を編集して作り直す（PUT /itineraries/:id/places）。
+/// 施設なら [placeId]、地図で施設ではない地点を選んだときは [location] と [name] で送る。
+@immutable
+class PlanEndpoint {
+  const PlanEndpoint({required this.name, this.placeId, this.location});
+
+  PlanEndpoint.fromPlace(Place place)
+    : this(name: place.name, placeId: place.placeId, location: place.location);
+
+  final String name;
+  final String? placeId;
+  final LatLng? location;
+
+  StartInput toStart(String departAt) => placeId != null
+      ? StartInput(placeId: placeId, departAt: departAt)
+      : StartInput(location: location, name: name, departAt: departAt);
+
+  EndInput toEnd(String arriveBy) => placeId != null
+      ? EndInput(placeId: placeId, arriveBy: arriveBy)
+      : EndInput(location: location, name: name, arriveBy: arriveBy);
+}
+
+/// 名前が空欄のとき、行き先からつける名前（例：朝市通り・海の美術館 ほか）
+String autoTitle(List<PlanEntry> entries) {
+  final names = entries.map((e) => e.place.name).toList();
+  final head = names
+      .take(_autoTitlePlaceCount)
+      .join(AppStrings.planNamedSeparator);
+  final title = names.length > _autoTitlePlaceCount
+      ? '$head${AppStrings.planAutoTitleMoreSuffix}'
+      : head;
+  return title.length > ApiConstraints.titleMaxLength
+      ? title.substring(0, ApiConstraints.titleMaxLength)
+      : title;
+}
+
+/// 3.2 新しい旅程（出発・終わり・行き先と優先度）（F-01、F-02、F-09、F-10）
+///
+/// [itineraryId] があれば既存の旅程を編集して作り直す（PUT /itineraries/:id/places、
+/// 名前が変わっていれば PATCH /itineraries/:id）。
 class PlanScreen extends HookConsumerWidget {
   const PlanScreen({super.key, this.itineraryId});
 
@@ -62,9 +104,9 @@ class PlanScreen extends HookConsumerWidget {
     final api = ref.watch(itineraryApiProvider);
 
     final entries = useState<List<PlanEntry>>(const []);
-    final start = useState<Place?>(null);
-    // 編集のとき、出発地を選び直したか（選び直していなければ今の出発地を送り直す）
-    final startPicked = useState(false);
+    final start = useState<PlanEndpoint?>(null);
+    // 終わる場所を選んでいなければ、出発地に戻る旅程にする
+    final end = useState<PlanEndpoint?>(null);
     final date = useState(DateUtils.dateOnly(DateTime.now()));
     final departAt = useState(
       const TimeOfDay(hour: _defaultDepartHour, minute: 0),
@@ -74,6 +116,7 @@ class PlanScreen extends HookConsumerWidget {
     final interpreting = useState(false);
     final interpreted = useState<List<InterpretedCandidate>>(const []);
 
+    final titleInput = useTextEditingController();
     final input = useTextEditingController();
     final query = useValueListenable(input).text;
     final autocomplete = useAutocomplete(ref, query);
@@ -82,6 +125,24 @@ class PlanScreen extends HookConsumerWidget {
     final existing = _isEdit
         ? ref.watch(itineraryProvider(itineraryId!))
         : null;
+    final current = existing?.value;
+    final tripStarted =
+        current?.items.any((item) => item.status != ItemStatus.upcoming) ??
+        false;
+
+    void restoreStart(ItineraryStart original) {
+      start.value = PlanEndpoint(
+        name: original.name,
+        placeId: original.placeId,
+        location: original.location,
+      );
+      final departure = original.departAt;
+      // API の日時は UTC に変換されて届く。入力する時刻はサーバーと同じ日本時間。
+      departAt.value = TimeOfDay.fromDateTime(
+        departure.isUtc ? departure.add(_japanUtcOffset) : departure,
+      );
+    }
+
     final prefilled = useState(false);
     useEffect(() {
       final itinerary = existing?.value;
@@ -95,19 +156,20 @@ class PlanScreen extends HookConsumerWidget {
             stayMin: item.stayMin,
           ),
       ];
-      start.value = Place(
-        placeId: itinerary.start.placeId ?? '',
-        name: itinerary.start.name,
-        location: itinerary.start.location,
+      titleInput.text = itinerary.title;
+      restoreStart(itinerary.start);
+      end.value = PlanEndpoint(
+        name: itinerary.end.name,
+        placeId: itinerary.end.placeId,
+        location: itinerary.end.location,
       );
       date.value = DateTime.parse(itinerary.date);
-      departAt.value = TimeOfDay.fromDateTime(
-        itinerary.start.departAt.toLocal(),
-      );
       final (h, m) = Format.parseHhmm(itinerary.end.arriveBy);
       endBy.value = TimeOfDay(hour: h, minute: m);
       return null;
     }, [existing?.value]);
+    final startLocked =
+        tripStarted && Format.isoDate(date.value) == current?.date;
 
     void addPlace(Place place) {
       if (entries.value.length >= ApiConstraints.placesMaxCount) {
@@ -142,35 +204,56 @@ class PlanScreen extends HookConsumerWidget {
       }
     }
 
+    // 地図から選ぶ画面（3.3）ができるまでは、施設名の検索で選ぶ
+    Future<Place?> searchPlace(String title) => PlaceSearchSheet.show(
+      context,
+      title: title,
+      hint: AppStrings.planSearchHint,
+    );
+
     Future<void> pickStart() async {
-      final place = await PlaceSearchSheet.show(
-        context,
-        title: AppStrings.planStartSearchTitle,
-        hint: AppStrings.planAddHint,
-      );
-      if (place != null) {
-        start.value = place;
-        startPicked.value = true;
+      final place = await searchPlace(AppStrings.planStartSearchTitle);
+      if (context.mounted && place != null) {
+        start.value = PlanEndpoint.fromPlace(place);
       }
     }
 
-    Future<void> pickDepart() async {
-      if (!_isEdit) {
-        final now = DateTime.now();
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: date.value,
-          firstDate: DateUtils.dateOnly(now),
-          lastDate: now.add(_datePickerRange),
-        );
-        if (picked == null || !context.mounted) return;
-        date.value = picked;
+    Future<void> pickEnd() async {
+      final place = await searchPlace(AppStrings.planEndSearchTitle);
+      if (context.mounted && place != null) {
+        end.value = PlanEndpoint.fromPlace(place);
       }
+    }
+
+    Future<void> pickDestination() async {
+      final place = await searchPlace(AppStrings.planPlaceSearchTitle);
+      if (context.mounted && place != null) addPlace(place);
+    }
+
+    Future<void> pickDate() async {
+      final today = DateUtils.dateOnly(DateTime.now());
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: date.value,
+        // 編集のとき、過ぎた旅行日のままでも開けるようにする
+        firstDate: date.value.isBefore(today) ? date.value : today,
+        lastDate: today.add(_datePickerRange),
+      );
+      if (!context.mounted || picked == null) return;
+      if (current != null &&
+          tripStarted &&
+          Format.isoDate(picked) == current.date) {
+        restoreStart(current.start);
+      }
+      date.value = picked;
+    }
+
+    Future<void> pickDepart() async {
       final time = await showTimePicker(
         context: context,
         initialTime: departAt.value,
       );
-      if (time != null) departAt.value = time;
+      if (context.mounted && time != null) departAt.value = time;
     }
 
     Future<void> pickEndBy() async {
@@ -178,60 +261,74 @@ class PlanScreen extends HookConsumerWidget {
         context: context,
         initialTime: endBy.value,
       );
-      if (time != null) endBy.value = time;
+      if (context.mounted && time != null) endBy.value = time;
+    }
+
+    void close() {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go(_isEdit ? Routes.today(itineraryId!) : Routes.itineraries);
+      }
     }
 
     Future<void> submit() async {
-      final startPlace = start.value;
-      if (startPlace == null) {
+      if (submitting.value) return;
+      final startPoint = start.value;
+      if (startPoint == null) {
         showMessageSnackBar(context, AppStrings.planNeedStart);
         return;
       }
+      if (endBy.value.compareTo(departAt.value) <= 0) {
+        showMessageSnackBar(context, AppStrings.planInvalidTimeRange);
+        return;
+      }
+      final endPoint = end.value ?? startPoint;
       submitting.value = true;
       try {
         final places = entries.value.map((e) => e.toInput()).toList();
-        final endByText = Format.hhmm(endBy.value.hour, endBy.value.minute);
         final departText = Format.hhmm(
           departAt.value.hour,
           departAt.value.minute,
         );
-        final current = existing?.value;
+        final endByText = Format.hhmm(endBy.value.hour, endBy.value.minute);
+        final dateText = Format.isoDate(date.value);
+        final title = titleInput.text.trim();
         final Itinerary itinerary;
-        if (_isEdit && current != null) {
-          itinerary = await ref
-              .read(itineraryProvider(itineraryId!).notifier)
-              .updatePlaces(
-                UpdatePlacesRequest(
-                  start: startPicked.value
-                      ? StartInput(
-                          placeId: startPlace.placeId,
-                          departAt: departText,
-                        )
-                      : StartInput.fromEndpoint(
-                          current.start,
-                          departAt: departText,
-                        ),
-                  end: EndInput.fromEndpoint(current.end, arriveBy: endByText),
-                  places: places,
-                ),
-              );
-        } else {
-          itinerary = await api.createItinerary(
-            CreateItineraryRequest(
-              title: '${startPlace.name}${AppStrings.planDefaultTitleSuffix}',
-              date: Format.isoDate(date.value),
-              start: StartInput(
-                placeId: startPlace.placeId,
-                departAt: departText,
-              ),
-              // 終わる場所を選ぶ画面ができるまでは、出発地に戻る旅程にする
-              end: EndInput(placeId: startPlace.placeId, arriveBy: endByText),
+        if (_isEdit) {
+          if (current == null) return;
+          final notifier = ref.read(itineraryProvider(itineraryId!).notifier);
+          var updated = await notifier.updatePlaces(
+            UpdatePlacesRequest(
+              // 旅行日を変えると時刻表が変わるので、変えたときだけ送る
+              date: dateText == current.date ? null : dateText,
+              start: startLocked ? null : startPoint.toStart(departText),
+              end: endPoint.toEnd(endByText),
               places: places,
             ),
           );
-          ref.invalidate(myItinerariesProvider);
+          if (!context.mounted) return;
+          // 名前を空欄にしたときは今の名前のままにする
+          if (title.isNotEmpty && title != updated.title) {
+            updated = await notifier.rename(title);
+          }
+          itinerary = updated;
+        } else {
+          itinerary = await api.createItinerary(
+            CreateItineraryRequest(
+              title: title.isEmpty ? autoTitle(entries.value) : title,
+              date: dateText,
+              start: startPoint.toStart(departText),
+              end: endPoint.toEnd(endByText),
+              places: places,
+            ),
+          );
         }
-        if (context.mounted) context.go(Routes.today(itinerary.id));
+        // 旅程の画面が、旅行日の前（3.5）か当日（3.4）かを出し分ける
+        if (context.mounted) {
+          ref.invalidate(myItinerariesProvider);
+          context.go(Routes.today(itinerary.id));
+        }
       } on ApiException catch (e) {
         if (!context.mounted) return;
         showErrorSnackBar(
@@ -244,140 +341,351 @@ class PlanScreen extends HookConsumerWidget {
             _ => null,
           },
         );
+      } catch (error) {
+        if (context.mounted) showErrorSnackBar(context, error);
       } finally {
-        submitting.value = false;
+        if (context.mounted) submitting.value = false;
       }
     }
 
     final canSubmit =
         entries.value.length >= ApiConstraints.placesMinCount &&
         !submitting.value;
-    final departLabel = [
-      if (!_isEdit) '${date.value.month}/${date.value.day}',
-      Format.hhmm(departAt.value.hour, departAt.value.minute),
-      start.value?.name ?? AppStrings.planStartUnset,
-    ].join(' ');
+    final endName = (end.value ?? start.value)?.name;
+    final loadState = switch (existing) {
+      null || AsyncValue(hasValue: true) => null,
+      AsyncError(:final error, isLoading: false) => ErrorView(
+        error: error,
+        onRetry: () => ref.invalidate(itineraryProvider(itineraryId!)),
+      ),
+      _ => const LoadingView(),
+    };
 
     return Scaffold(
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.screenPadding,
-                tokens.space28,
-                tokens.screenPadding,
-                tokens.space12,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                spacing: tokens.space4,
-                children: [
-                  Text(
-                    AppStrings.planTitle,
-                    style: context.texts.headlineSmall,
-                  ),
-                  Text(
-                    AppStrings.planSubtitle,
-                    style: context.texts.bodyMedium?.copyWith(
-                      color: context.colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: tokens.screenPadding),
-              child: _AddPlaceField(
-                controller: input,
-                loading: interpreting.value,
-                onSubmit: interpret,
-              ),
+            BackTopBar(
+              title: _isEdit
+                  ? AppStrings.planTopBarEdit
+                  : AppStrings.planTopBarNew,
+              backLabel: _isEdit
+                  ? AppStrings.planCloseEdit
+                  : AppStrings.planCloseNew,
+              icon: Icons.close,
+              onBack: close,
             ),
             Expanded(
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.screenPadding,
-                  tokens.space8,
-                  tokens.screenPadding,
-                  tokens.space8,
-                ),
-                children: [
-                  PlaceCandidateList(
-                    candidates: autocomplete,
-                    onPick: addPlace,
-                  ),
-                  if (interpreted.value.isNotEmpty)
-                    _InterpretedList(
-                      candidates: interpreted.value,
-                      onPick: addPlace,
+              child:
+                  loadState ??
+                  ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.screenPadding,
+                      tokens.space8,
+                      tokens.screenPadding,
+                      tokens.space8,
                     ),
-                  if (entries.value.isEmpty && query.isEmpty)
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: tokens.space24),
-                      child: Text(
-                        AppStrings.planEmpty,
-                        textAlign: TextAlign.center,
-                        style: context.texts.bodyMedium?.copyWith(
-                          color: context.colors.onSurfaceVariant,
+                    children: [
+                      _DateAndTitle(
+                        date: date.value,
+                        onPickDate: pickDate,
+                        titleController: titleInput,
+                      ),
+                      SizedBox(height: tokens.space14),
+                      _EndpointsCard(
+                        departAt: Format.hhmm(
+                          departAt.value.hour,
+                          departAt.value.minute,
+                        ),
+                        startName: start.value?.name,
+                        endBy: Format.hhmm(
+                          endBy.value.hour,
+                          endBy.value.minute,
+                        ),
+                        endName: endName,
+                        onPickDepart: startLocked ? null : pickDepart,
+                        onPickStart: startLocked ? null : pickStart,
+                        onPickEndBy: pickEndBy,
+                        onPickEnd: pickEnd,
+                      ),
+                      if (startLocked)
+                        Padding(
+                          padding: EdgeInsets.only(top: tokens.space8),
+                          child: const Text(AppStrings.planStartLocked),
+                        ),
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: tokens.space16,
+                          bottom: tokens.space8,
+                        ),
+                        child: Text(
+                          AppStrings.planPlacesHeader,
+                          style: context.texts.titleSmall,
                         ),
                       ),
+                      _AddPlaceField(
+                        controller: input,
+                        loading: interpreting.value,
+                        onSubmit: interpret,
+                        onSearch: pickDestination,
+                      ),
+                      SizedBox(height: tokens.space14),
+                      PlaceCandidateList(
+                        candidates: autocomplete,
+                        onPick: addPlace,
+                      ),
+                      if (interpreted.value.isNotEmpty)
+                        _InterpretedList(
+                          candidates: interpreted.value,
+                          onPick: addPlace,
+                        ),
+                      if (entries.value.isEmpty && query.isEmpty)
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: tokens.space24,
+                          ),
+                          child: Text(
+                            AppStrings.planEmpty,
+                            textAlign: TextAlign.center,
+                            style: context.texts.bodyMedium?.copyWith(
+                              color: context.colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      for (final (i, entry) in entries.value.indexed)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: tokens.space10),
+                          child: _PlanEntryCard(
+                            entry: entry,
+                            onChanged: (e) => updateEntry(i, e),
+                            onRemove: () => removeEntry(i),
+                          ),
+                        ),
+                    ],
+                  ),
+            ),
+            if (loadState == null)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.screenPadding,
+                  tokens.space14,
+                  tokens.screenPadding,
+                  tokens.space24,
+                ),
+                child: PrimaryButton(
+                  label: _isEdit
+                      ? AppStrings.planUpdate
+                      : AppStrings.planSubmit,
+                  loading: submitting.value,
+                  onPressed: canSubmit ? submit : null,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 枠線付きのボタン（旅行日・時刻・場所）
+class _OutlinedField extends StatelessWidget {
+  const _OutlinedField({
+    required this.height,
+    required this.radius,
+    required this.onTap,
+    required this.semanticLabel,
+    required this.child,
+    this.width,
+    this.padding,
+  });
+
+  final double height;
+  final double? width;
+  final double radius;
+  final VoidCallback? onTap;
+  final String semanticLabel;
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(radius),
+      side: BorderSide(
+        color: context.colors.outline,
+        width: tokens.borderWidth,
+      ),
+    );
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: semanticLabel,
+      excludeSemantics: true,
+      child: SizedBox(
+        height: height,
+        width: width,
+        child: Material(
+          color: context.colors.surface,
+          shape: shape,
+          child: InkWell(
+            customBorder: shape,
+            onTap: onTap,
+            child: Padding(padding: padding ?? EdgeInsets.zero, child: child),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 旅行日と旅程の名前
+class _DateAndTitle extends StatelessWidget {
+  const _DateAndTitle({
+    required this.date,
+    required this.onPickDate,
+    required this.titleController,
+  });
+
+  final DateTime date;
+  final VoidCallback onPickDate;
+  final TextEditingController titleController;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final muted = context.colors.onSurfaceVariant;
+    final labelStyle = context.texts.labelMedium?.copyWith(color: muted);
+    final dateText = Format.monthDayWeekday(date);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: tokens.space8,
+      children: [
+        SizedBox(
+          width: tokens.planDateFieldWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.space4,
+            children: [
+              Text(AppStrings.planDateLabel, style: labelStyle),
+              _OutlinedField(
+                height: tokens.inputHeight,
+                radius: tokens.radiusMedium,
+                onTap: onPickDate,
+                semanticLabel:
+                    '${AppStrings.planDateLabel} $dateText${AppStrings.planChangeSuffix}',
+                padding: EdgeInsets.symmetric(horizontal: tokens.space10),
+                child: Row(
+                  spacing: tokens.space6,
+                  children: [
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      size: tokens.smallIconSize,
+                      color: muted,
                     ),
-                  for (final (i, entry) in entries.value.indexed)
-                    Padding(
-                      padding: EdgeInsets.only(bottom: tokens.space10),
-                      child: _PlanEntryCard(
-                        entry: entry,
-                        onChanged: (e) => updateEntry(i, e),
-                        onRemove: () => removeEntry(i),
+                    Expanded(
+                      child: Text(
+                        dateText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.texts.titleSmall,
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.screenPadding,
-                tokens.space14,
-                tokens.screenPadding,
-                0,
-              ),
-              child: Row(
-                spacing: tokens.space8,
-                children: [
-                  Expanded(
-                    child: SummaryTile(
-                      label: AppStrings.planStart,
-                      value: departLabel,
-                      onTap: () async {
-                        if (!_isEdit) await pickStart();
-                        if (context.mounted) await pickDepart();
-                      },
-                    ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.space4,
+            children: [
+              Text(AppStrings.planTitleLabel, style: labelStyle),
+              SizedBox(
+                height: tokens.inputHeight,
+                child: TextField(
+                  controller: titleController,
+                  maxLength: ApiConstraints.titleMaxLength,
+                  textInputAction: TextInputAction.done,
+                  style: context.texts.bodyLarge,
+                  decoration: const InputDecoration(
+                    hintText: AppStrings.planTitleHint,
+                    counterText: '',
                   ),
-                  Expanded(
-                    child: SummaryTile(
-                      label: AppStrings.planEndBy,
-                      value: Format.hhmm(endBy.value.hour, endBy.value.minute),
-                      onTap: pickEndBy,
-                    ),
-                  ),
-                ],
+                ),
               ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 出発と終わり（時刻と場所）
+class _EndpointsCard extends StatelessWidget {
+  const _EndpointsCard({
+    required this.departAt,
+    required this.startName,
+    required this.endBy,
+    required this.endName,
+    required this.onPickDepart,
+    required this.onPickStart,
+    required this.onPickEndBy,
+    required this.onPickEnd,
+  });
+
+  final String departAt;
+  final String? startName;
+  final String endBy;
+  final String? endName;
+  final VoidCallback? onPickDepart;
+  final VoidCallback? onPickStart;
+  final VoidCallback onPickEndBy;
+  final VoidCallback onPickEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Semantics(
+      container: true,
+      label: AppStrings.planEndpoints,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: tokens.cardBorder,
+            width: tokens.borderWidth,
+          ),
+          borderRadius: BorderRadius.circular(tokens.radiusLarge),
+        ),
+        child: Column(
+          children: [
+            _EndpointRow(
+              label: AppStrings.planStart,
+              time: departAt,
+              timeLabel: AppStrings.planStartTimeLabel,
+              onPickTime: onPickDepart,
+              placeIcon: Icons.place_outlined,
+              placeName: startName,
+              placeLabel: AppStrings.planStartPlaceLabel,
+              placeUnset: AppStrings.planStartUnset,
+              onPickPlace: onPickStart,
             ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.screenPadding,
-                tokens.space14,
-                tokens.screenPadding,
-                tokens.space24,
-              ),
-              child: PrimaryButton(
-                label: _isEdit ? AppStrings.planUpdate : AppStrings.planSubmit,
-                loading: submitting.value,
-                onPressed: canSubmit ? submit : null,
-              ),
+            Divider(indent: tokens.space12, endIndent: tokens.space12),
+            _EndpointRow(
+              label: AppStrings.planEnd,
+              time: endBy,
+              timeSuffix: AppStrings.planEndBySuffix,
+              timeLabel: AppStrings.planEndTimeLabel,
+              onPickTime: onPickEndBy,
+              placeIcon: Icons.flag_outlined,
+              placeName: endName,
+              placeLabel: AppStrings.planEndPlaceLabel,
+              placeUnset: AppStrings.planEndUnset,
+              onPickPlace: onPickEnd,
             ),
           ],
         ),
@@ -386,68 +694,178 @@ class PlanScreen extends HookConsumerWidget {
   }
 }
 
+class _EndpointRow extends StatelessWidget {
+  const _EndpointRow({
+    required this.label,
+    required this.time,
+    required this.timeLabel,
+    required this.onPickTime,
+    required this.placeIcon,
+    required this.placeName,
+    required this.placeLabel,
+    required this.placeUnset,
+    required this.onPickPlace,
+    this.timeSuffix,
+  });
+
+  final String label;
+  final String time;
+  final String? timeSuffix;
+  final String timeLabel;
+  final VoidCallback? onPickTime;
+  final IconData placeIcon;
+  final String? placeName;
+  final String placeLabel;
+  final String placeUnset;
+  final VoidCallback? onPickPlace;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final texts = context.texts;
+    final muted = context.colors.onSurfaceVariant;
+    final name = placeName;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.space12,
+        tokens.space6,
+        tokens.space8,
+        tokens.space6,
+      ),
+      child: Row(
+        spacing: tokens.space8,
+        children: [
+          SizedBox(
+            width: tokens.endpointLabelWidth,
+            child: Text(
+              label,
+              style: texts.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          _OutlinedField(
+            width: tokens.endpointTimeWidth,
+            height: tokens.endpointFieldHeight,
+            radius: tokens.radiusSmall,
+            onTap: onPickTime,
+            semanticLabel:
+                '$timeLabel $time${timeSuffix ?? ''}'
+                '${onPickTime == null ? '' : AppStrings.planChangeSuffix}',
+            child: Center(
+              child: Text.rich(
+                TextSpan(
+                  text: time,
+                  children: [
+                    if (timeSuffix != null)
+                      TextSpan(
+                        text: timeSuffix,
+                        style: texts.labelMedium?.copyWith(color: muted),
+                      ),
+                  ],
+                ),
+                style: texts.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _OutlinedField(
+              height: tokens.endpointFieldHeight,
+              radius: tokens.radiusSmall,
+              onTap: onPickPlace,
+              semanticLabel:
+                  '$placeLabel ${name ?? ''}'
+                  '${onPickPlace == null ? '' : AppStrings.planSearchSuffix}',
+              padding: EdgeInsets.symmetric(horizontal: tokens.space10),
+              child: Row(
+                spacing: tokens.space6,
+                children: [
+                  Icon(placeIcon, size: tokens.smallIconSize, color: muted),
+                  Expanded(
+                    child: Text(
+                      name ?? placeUnset,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: name == null
+                          ? texts.labelLarge?.copyWith(color: muted)
+                          : texts.titleSmall,
+                    ),
+                  ),
+                  if (onPickPlace != null)
+                    Icon(
+                      Icons.search,
+                      size: tokens.smallIconSize,
+                      color: muted,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 行き先の入力欄と、地図から選ぶボタン・追加ボタン
 class _AddPlaceField extends StatelessWidget {
   const _AddPlaceField({
     required this.controller,
     required this.loading,
     required this.onSubmit,
+    required this.onSearch,
   });
 
   final TextEditingController controller;
   final bool loading;
   final VoidCallback onSubmit;
+  final VoidCallback onSearch;
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      spacing: tokens.space4,
+    return Row(
+      spacing: tokens.space8,
       children: [
-        Text(
-          AppStrings.planAddLabel,
-          style: context.texts.labelMedium?.copyWith(
-            color: context.colors.onSurfaceVariant,
+        Expanded(
+          child: SizedBox(
+            height: tokens.inputHeight,
+            child: TextField(
+              controller: controller,
+              maxLength: ApiConstraints.interpretTextMaxLength,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => onSubmit(),
+              style: context.texts.bodyLarge,
+              decoration: const InputDecoration(
+                hintText: AppStrings.planAddHint,
+                counterText: '',
+              ),
+            ),
           ),
         ),
-        Row(
-          spacing: tokens.space8,
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: tokens.inputHeight,
-                child: TextField(
-                  controller: controller,
-                  maxLength: ApiConstraints.interpretTextMaxLength,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => onSubmit(),
-                  style: context.texts.bodyLarge,
-                  decoration: const InputDecoration(
-                    hintText: AppStrings.planAddHint,
-                    counterText: '',
-                  ),
-                ),
+        _OutlinedField(
+          width: tokens.inputHeight,
+          height: tokens.inputHeight,
+          radius: tokens.radiusMedium,
+          onTap: onSearch,
+          semanticLabel: AppStrings.planSearchPlaceButton,
+          child: Center(child: Icon(Icons.search, size: tokens.iconSize)),
+        ),
+        SizedBox.square(
+          dimension: tokens.inputHeight,
+          child: IconButton.filled(
+            tooltip: AppStrings.planAddButton,
+            onPressed: loading ? null : onSubmit,
+            style: IconButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(tokens.radiusMedium),
               ),
             ),
-            SizedBox.square(
-              dimension: tokens.inputHeight,
-              child: IconButton.filled(
-                tooltip: AppStrings.planAddButton,
-                onPressed: loading ? null : onSubmit,
-                style: IconButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(tokens.radiusMedium),
-                  ),
-                ),
-                icon: loading
-                    ? SizedBox.square(
-                        dimension: tokens.iconSize,
-                        child: const CircularProgressIndicator(),
-                      )
-                    : Icon(Icons.add, size: tokens.iconSize),
-              ),
-            ),
-          ],
+            icon: loading
+                ? SizedBox.square(
+                    dimension: tokens.iconSize,
+                    child: const CircularProgressIndicator(),
+                  )
+                : Icon(Icons.add, size: tokens.iconSize),
+          ),
         ),
       ],
     );
@@ -595,7 +1013,7 @@ class PrioritySegment extends StatelessWidget {
     final tokens = context.tokens;
     final colors = context.colors;
     return Semantics(
-      label: AppStrings.planSubtitle,
+      label: AppStrings.planPriorityLabel,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: tokens.tileBackground,

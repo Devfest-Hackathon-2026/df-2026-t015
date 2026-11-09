@@ -15,10 +15,6 @@ import '../today/today_screen.dart' show useNow;
 import 'itinerary_groups.dart';
 import 'itinerary_list_actions.dart';
 
-/// 「新しい旅程を作る」を押せるか。
-/// 旅程を作る画面（3.2）が未完成のため、当面は押せないようにしている。
-const _createEnabled = false;
-
 /// 3.1 旅程一覧（F-08、F-09、F-11）。作った旅程をまとめて管理する。
 ///
 /// 旅程を「今日」「これから」「終わった旅」に分けて並べ、
@@ -109,12 +105,7 @@ class ItineraryListScreen extends HookConsumerWidget {
         ),
       ),
       bottomNavigationBar: _CreateBar(
-        onPressed: _createEnabled
-            ? () async {
-                await context.push(Routes.plan);
-                ref.invalidate(myItinerariesProvider);
-              }
-            : null,
+        onPressed: () => context.push(Routes.plan),
       ),
     );
   }
