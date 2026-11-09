@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	firebase "firebase.google.com/go/v4"
 	"golang.org/x/oauth2"
@@ -58,7 +57,9 @@ func Connect(ctx context.Context) (*App, func() error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
+	// 応答までの上限は Request が context で決めるので、Client.Timeout は付けない
+	// （oauth2.Transport と併用すると非推奨の CancelRequest が呼ばれて警告が出る）。
+	client := &http.Client{}
 	mapsKey, geminiKey := env("GOOGLE_MAPS_API_KEY"), env("GEMINI_API_KEY")
 	mapsClient, aiClient := client, client
 	// API キーがない（組織のポリシーで作れないなど）ときは、ADC のトークンで呼ぶ。
@@ -68,7 +69,7 @@ func Connect(ctx context.Context) (*App, func() error, error) {
 			db.Close()
 			return nil, nil, fmt.Errorf("API キーがない場合は ADC が必要です（gcloud auth application-default login）: %w", err)
 		}
-		authed := &http.Client{Timeout: 15 * time.Second, Transport: &oauth2.Transport{Source: credentials.TokenSource, Base: http.DefaultTransport}}
+		authed := &http.Client{Transport: &oauth2.Transport{Source: credentials.TokenSource, Base: http.DefaultTransport}}
 		if mapsKey == "" {
 			mapsClient = authed
 		}

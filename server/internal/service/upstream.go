@@ -10,7 +10,13 @@ import (
 	"time"
 )
 
+// Request は外部APIを呼ぶ。応答までの上限は 15 秒。
 func Request(ctx context.Context, client *http.Client, method, url string, headers map[string]string, input, output any) error {
+	return RequestWithin(ctx, 15*time.Second, client, method, url, headers, input, output)
+}
+
+// RequestWithin は応答までの上限を指定して外部APIを呼ぶ（生成に時間がかかる Gemini など）。
+func RequestWithin(ctx context.Context, timeout time.Duration, client *http.Client, method, url string, headers map[string]string, input, output any) error {
 	var body []byte
 	var err error
 	if input != nil {
@@ -19,7 +25,7 @@ func Request(ctx context.Context, client *http.Client, method, url string, heade
 			return Upstream()
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	r, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {

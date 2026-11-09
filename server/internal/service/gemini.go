@@ -10,7 +10,12 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"time"
 )
+
+// geminiTimeout は Gemini の応答を待つ上限。生成には 10 秒以上かかることがあるため、
+// 認証ミドルウェアの 60 秒・サーバーの WriteTimeout 70 秒より短い範囲で長めにとる。
+const geminiTimeout = 45 * time.Second
 
 // Gemini は Gemini の呼び出し先。Key があれば Gemini API（generativelanguage）を API キーで、
 // なければ Vertex AI を ADC で呼ぶ（HTTP に ADC のトークンを付けるクライアントを渡す）。
@@ -134,7 +139,7 @@ func (g *Gemini) generate(ctx context.Context, prompt string, temperature float6
 		} `json:"candidates"`
 	}
 	endpoint, headers := g.endpoint()
-	err := Request(ctx, g.HTTP, "POST", endpoint, headers, input, &response)
+	err := RequestWithin(ctx, geminiTimeout, g.HTTP, "POST", endpoint, headers, input, &response)
 	if err != nil {
 		return err
 	}
