@@ -115,4 +115,21 @@ go build -o /tmp/iterinerary-api ./cmd/server
 
 通常のテストでは認証・保存先・Maps/GeminiのHTTP応答を差し替えるため、有料サービスへアクセスしません。実接続には有効な設定とFirebase IDトークンが必要です。`FIRESTORE_EMULATOR_HOST` が設定されている場合は、`demo-iterinerary` プロジェクトのエミュレーター内で保存・同時更新・理由文の処理権・案の確定も検証します。
 
+### ライブテスト（本物の外部サービスに接続）
+
+```sh
+GENTLE_LIVE_TEST=1 go test ./api -run TestLiveAPI -v
+```
+
+```powershell
+$env:GENTLE_LIVE_TEST = "1"; go test ./api -run TestLiveAPI -v -count=1
+```
+
+`api/live_test.go` は Firebase Auth・Firestore・Google Maps・Gemini に実際に接続し、匿名ログイン → 施設検索（autocomplete・詳細・周辺・interpret）→ 旅程の作成・取得・一覧・名前の変更・削除を順に確認します。`GENTLE_LIVE_TEST=1` のときだけ動き、通常の `go test ./...` では SKIP します。外部サービスの料金がかかります。
+
+- `.env` に通常の設定に加えて `FIREBASE_WEB_API_KEY`（Firebase コンソール → プロジェクトの設定 → ウェブ API キー）が必要です。
+- Authentication で「匿名」ログインを有効にしてください。
+- 一覧の確認には `firestore.indexes.json` の複合インデックスが必要です。
+- 作った旅程と匿名ユーザーはテストの最後に削除します。
+
 接続仕様の参照: [Firebase IDトークンの検証](https://firebase.google.com/docs/auth/admin/verify-id-tokens)、[Places Autocomplete](https://developers.google.com/maps/documentation/places/web-service/place-autocomplete)、[Routes](https://developers.google.com/maps/documentation/routes/transit-route)、[Geminiの構造化出力](https://ai.google.dev/gemini-api/docs/structured-output)。

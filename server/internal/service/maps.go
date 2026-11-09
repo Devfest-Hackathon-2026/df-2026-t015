@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -106,6 +107,7 @@ func (m *Maps) Autocomplete(ctx context.Context, query string, near *Point) ([]P
 	for _, suggestion := range output.Suggestions {
 		p := suggestion.Prediction
 		if !ValidID(p.PlaceID) || p.Format.Main.Text == "" {
+			log.Printf("upstream places:autocomplete: unexpected suggestion (placeId=%q mainText=%q)", p.PlaceID, p.Format.Main.Text)
 			return nil, Upstream()
 		}
 		places = append(places, Place{PlaceID: p.PlaceID, Name: p.Format.Main.Text, Address: p.Format.Secondary.Text})

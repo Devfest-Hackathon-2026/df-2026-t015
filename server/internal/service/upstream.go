@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -30,9 +31,14 @@ func Request(ctx context.Context, client *http.Client, method, url string, heade
 	}
 	response, err := client.Do(r)
 	if err != nil {
+		log.Printf("upstream %s %s: %v", method, r.URL.Host+r.URL.Path, err)
 		return Upstream()
 	}
 	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		detail, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
+		log.Printf("upstream %s %s: HTTP %d: %s", method, r.URL.Host+r.URL.Path, response.StatusCode, bytes.TrimSpace(detail))
+	}
 	if response.StatusCode == 429 {
 		return Fail(429, "RATE_LIMITED", "外部サービスの呼び出し上限に達しました")
 	}
@@ -41,6 +47,7 @@ func Request(ctx context.Context, client *http.Client, method, url string, heade
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, (2<<20)+1))
 	if err != nil || len(data) > 2<<20 || json.Unmarshal(data, output) != nil {
+		log.Printf("upstream %s %s: invalid response body", method, r.URL.Host+r.URL.Path)
 		return Upstream()
 	}
 	return nil
