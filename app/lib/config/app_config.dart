@@ -16,7 +16,7 @@ class AppConfig {
   static const _useMockApiKey = 'USE_MOCK_API';
   static const _defaultApiBaseUrl = 'http://localhost:8080';
 
-  /// Cloud Run 上の Express API のベース URL
+  /// Go の API サーバーのベース URL。Firebase Hosting で公開するときは `https://<プロジェクト>.web.app/api`
   final String apiBaseUrl;
 
   /// true のときはサーバーと Firebase を使わず、端末内のサンプルデータで動かす

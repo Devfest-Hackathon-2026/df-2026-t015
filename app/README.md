@@ -19,6 +19,19 @@ flutter run \
   --dart-define=API_BASE_URL=https://<Cloud Run の URL>
 ```
 
+手元のサーバー（`server/`、`http://localhost:8080`）に Chrome からつなぐときは、サーバーを
+`CORS_ALLOWED_ORIGINS='http://localhost:*'` を付けて起動する。
+
+公開（Firebase Hosting）用のビルド:
+
+```sh
+flutter build web --release \
+  --dart-define=USE_MOCK_API=false \
+  --dart-define=API_BASE_URL=https://<プロジェクトID>.web.app/api
+```
+
+`/api/**` は Hosting から Cloud Run の API サーバーに転送される（リポジトリ直下の `firebase.json`、手順は `server/README.md`）。
+
 モデル（freezed / json_serializable）を変えたら:
 
 ```sh
