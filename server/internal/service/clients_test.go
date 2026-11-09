@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 )
@@ -99,5 +100,21 @@ func TestEnvTrimsCarriageReturn(t *testing.T) {
 	t.Setenv("GEMINI_MODEL", "gemini-3.5-flash\r")
 	if got := env("GEMINI_MODEL"); got != "gemini-3.5-flash" {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestPortAndLibraryEnvTrimCarriageReturn(t *testing.T) {
+	t.Setenv("PORT", "9090\r")
+	if got := Port(); got != "9090" {
+		t.Fatalf("port %q", got)
+	}
+	t.Setenv("PORT", "")
+	if got := Port(); got != "8080" {
+		t.Fatalf("default port %q", got)
+	}
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/path/key.json\r")
+	cleanLibraryEnv()
+	if got := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"); got != "/path/key.json" {
+		t.Fatalf("credentials path %q", got)
 	}
 }

@@ -20,7 +20,26 @@ func env(name string) string { return strings.TrimSpace(os.Getenv(name)) }
 // cloudScope は ADC で Vertex AI・Places・Routes を呼ぶときのスコープ。
 const cloudScope = "https://www.googleapis.com/auth/cloud-platform"
 
+// Port は待ち受けるポート（既定 8080）。
+func Port() string {
+	if port := env("PORT"); port != "" {
+		return port
+	}
+	return "8080"
+}
+
+// cleanLibraryEnv は、Google のライブラリが直接読む環境変数から前後の空白と CR を取り除く
+// （CRLF で保存された .env を読み込むと、ファイルパスなどの末尾に \r が付くため）。
+func cleanLibraryEnv() {
+	for _, name := range []string{"GOOGLE_APPLICATION_CREDENTIALS", "FIRESTORE_EMULATOR_HOST", "GOOGLE_CLOUD_PROJECT"} {
+		if value, ok := os.LookupEnv(name); ok && value != strings.TrimSpace(value) {
+			os.Setenv(name, strings.TrimSpace(value))
+		}
+	}
+}
+
 func Connect(ctx context.Context) (*App, func() error, error) {
+	cleanLibraryEnv()
 	for _, key := range []string{"FIREBASE_PROJECT_ID", "GEMINI_MODEL"} {
 		if env(key) == "" {
 			return nil, nil, fmt.Errorf("%s を設定してください", key)
