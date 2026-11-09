@@ -32,9 +32,9 @@ abstract final class ApiConstraints {
   /// 1 人が保存できる旅程の件数
   static const itineraryMaxCount = 20;
 
-  /// 旅程名（PATCH /itineraries/:id の title）の長さ
+  /// 旅程名の長さ（作成・名前の変更・コピーでサーバーと同じ上限）
   static const titleMinLength = 1;
-  static const titleMaxLength = 50;
+  static const titleMaxLength = 100;
 
   /// GET /me/itineraries の limit
   static const myItinerariesLimitMin = 1;

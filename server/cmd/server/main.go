@@ -24,11 +24,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer closeDB()
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-	server := &http.Server{Addr: ":" + port, Handler: api.New(app), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 70 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	port := service.Port()
+	server := &http.Server{Addr: ":" + port, Handler: api.Public(api.New(app), api.PublicOptionsFromEnv()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 70 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

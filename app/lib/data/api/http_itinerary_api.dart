@@ -5,7 +5,7 @@ import '../models/models.dart';
 import 'api_exception.dart';
 import 'itinerary_api.dart';
 
-/// Cloud Run 上の Express API と通信する [ItineraryApi]。
+/// Cloud Run 上の Go の API サーバーと通信する [ItineraryApi]。
 ///
 /// TODO: サーバーの OpenAPI 定義ができたら、生成した Dart クライアントに置き換える。
 class HttpItineraryApi implements ItineraryApi {
