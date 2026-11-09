@@ -54,3 +54,50 @@ func TestGeminiStructuredResponse(t *testing.T) {
 		t.Fatalf("output=%+v err=%v", output, err)
 	}
 }
+
+func TestGeminiUsesVertexAIWithoutAPIKey(t *testing.T) {
+	var gotURL, apiKey, userProject string
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gotURL, apiKey, userProject = r.URL.String(), r.Header.Get("x-goog-api-key"), r.Header.Get("X-Goog-User-Project")
+		body := `{"candidates":[{"content":{"parts":[{"text":"{\"text\":\"ok\"}"}]},"finishReason":"STOP"}]}`
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	for _, test := range []struct{ location, want string }{
+		{"global", "https://aiplatform.googleapis.com/v1/projects/gen-tle/locations/global/publishers/google/models/gemini-3.5-flash:generateContent"},
+		{"asia-northeast1", "https://asia-northeast1-aiplatform.googleapis.com/v1/projects/gen-tle/locations/asia-northeast1/publishers/google/models/gemini-3.5-flash:generateContent"},
+	} {
+		ai := Gemini{Model: "gemini-3.5-flash", Project: "gen-tle", Location: test.location, HTTP: client}
+		var output struct {
+			Text string `json:"text"`
+		}
+		if err := ai.Ask(context.Background(), Prompt{Task: "t"}, ObjectSchema(map[string]any{"text": map[string]any{"type": "string"}}), &output); err != nil || output.Text != "ok" {
+			t.Fatalf("output=%+v err=%v", output, err)
+		}
+		if gotURL != test.want || apiKey != "" || userProject != "gen-tle" {
+			t.Fatalf("url=%s key=%q project=%q", gotURL, apiKey, userProject)
+		}
+	}
+	keyed := Gemini{Key: "k", Model: "gemini-3.5-flash"}
+	if url, headers := keyed.endpoint(); url != "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent" || headers["x-goog-api-key"] != "k" {
+		t.Fatalf("api key endpoint: %s %v", url, headers)
+	}
+}
+
+func TestMapsHeadersWithoutAPIKeyUseQuotaProject(t *testing.T) {
+	adc := Maps{Project: "gen-tle"}
+	headers := adc.headers("places.id")
+	if _, ok := headers["X-Goog-Api-Key"]; ok || headers["X-Goog-User-Project"] != "gen-tle" || headers["X-Goog-FieldMask"] != "places.id" {
+		t.Fatalf("%v", headers)
+	}
+	keyed := Maps{Key: "k", Project: "gen-tle"}
+	if headers := keyed.headers("places.id"); headers["X-Goog-Api-Key"] != "k" || headers["X-Goog-User-Project"] != "" {
+		t.Fatalf("%v", headers)
+	}
+}
+
+func TestEnvTrimsCarriageReturn(t *testing.T) {
+	t.Setenv("GEMINI_MODEL", "gemini-3.5-flash\r")
+	if got := env("GEMINI_MODEL"); got != "gemini-3.5-flash" {
+		t.Fatalf("%q", got)
+	}
+}

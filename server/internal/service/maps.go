@@ -10,9 +10,19 @@ import (
 	"time"
 )
 
+// Maps は Places API (New) と Routes API の呼び出し先。Key があれば API キーで、
+// なければ ADC のトークン（HTTP に付けるクライアントを渡す）と課金先の Project で呼ぶ。
 type Maps struct {
-	Key  string
-	HTTP *http.Client
+	Key     string
+	HTTP    *http.Client
+	Project string
+}
+
+func (m *Maps) mode() string {
+	if m.Key != "" {
+		return "API キー"
+	}
+	return "ADC（" + m.Project + "）"
 }
 
 type HourPoint struct {
@@ -71,6 +81,9 @@ func (p mapPlace) place() (Place, error) {
 }
 
 func (m *Maps) headers(mask string) map[string]string {
+	if m.Key == "" {
+		return map[string]string{"X-Goog-User-Project": m.Project, "X-Goog-FieldMask": mask}
+	}
 	return map[string]string{"X-Goog-Api-Key": m.Key, "X-Goog-FieldMask": mask}
 }
 
