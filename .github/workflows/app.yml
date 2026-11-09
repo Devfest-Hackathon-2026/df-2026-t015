@@ -1,0 +1,49 @@
+name: app
+
+# app/ 以下に変更があったときだけ実行する
+on:
+  pull_request:
+    paths:
+      - 'app/**'
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+  workflow_dispatch:
+
+# 同じブランチ / PR で新しい push があれば古い実行を止める
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: app
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          # ローカルと揃える。上げるときはここを更新する
+          flutter-version: 3.47.0
+          cache: true
+      - run: flutter pub get
+      - name: 開発規約（StatefulWidget / Color(0x の直接指定）
+        run: bash tool/check_conventions.sh
+      - name: 生成コードが最新か
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          # 差分だけでなく、コミットし忘れた新規生成ファイルも検出する
+          if [ -n "$(git status --porcelain -- lib)" ]; then
+            git status --porcelain -- lib
+            echo '::error::生成コードが古いです。dart run build_runner build を実行してコミットしてください'
+            exit 1
+          fi
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
