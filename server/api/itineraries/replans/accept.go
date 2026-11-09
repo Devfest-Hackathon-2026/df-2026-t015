@@ -1,15 +1,31 @@
 package replans
 
-// POST /itineraries/:id/replans/:replanId/accept
-// 選択した組み直し案を旅程に反映する（F-04）。
-//
-// 入力（パス）: id（旅程ID）、replanId（組み直し案ID）。
-// 入力（JSON）: optionId。
-// ヘッダー: If-Match: <version> が必須。案の basedOnVersion と同じ値を送る。
-// 認証: Bearer の Firebase ID token を検証し、旅程の ownerUid と uid を照合する。
-// 出力（200、JSON / UTF-8）: 更新後の Itinerary。version を1増やし、ETag に入れる。
-// エラー: 400 INVALID_ARGUMENT、401 UNAUTHENTICATED、404 NOT_FOUND、429 RATE_LIMITED。
-//   409 VERSION_CONFLICT: 旅程が先に更新されている。
-//   410 REPLAN_EXPIRED: 案の有効期限（15分）が切れている。
-//
-// 実装する処理: 認証・所有者確認 → 案・期限を確認 → version を照合して反映 → 返す。
+import (
+	"net/http"
+
+	"github.com/create-alt/gen-TLE/server/internal/service"
+)
+
+func Accept(app *service.App) http.HandlerFunc {
+	return service.Handle(func(w http.ResponseWriter, r *http.Request) error {
+		version, err := service.Version(r)
+		if err != nil {
+			return err
+		}
+		var input struct {
+			OptionID string `json:"optionId"`
+		}
+		if err := service.Decode(w, r, &input); err != nil {
+			return err
+		}
+		if !service.ValidID(input.OptionID) || !service.ValidID(r.PathValue("id")) || !service.ValidID(r.PathValue("replanId")) {
+			return service.Invalid("旅程・案・optionId が不正です")
+		}
+		value, err := app.Store.Accept(r.Context(), service.UID(r), r.PathValue("id"), r.PathValue("replanId"), input.OptionID, version)
+		if err != nil {
+			return err
+		}
+		service.ReplyItinerary(w, 200, value)
+		return nil
+	})
+}

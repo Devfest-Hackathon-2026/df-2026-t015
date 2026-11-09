@@ -1,24 +1,35 @@
 package places
 
-// GET /places/autocomplete
-// 施設名の入力補完（F-01）。Places API（Autocomplete）から候補を取得する。
-//
-// 入力（クエリ）:
-//   q: 必須。1〜100文字の入力中の施設名。
-//   lat / lng: 任意。指定地点に近い施設を優先する。
-//
-// 認証:
-//   Authorization: Bearer <Firebase ID token> を必須とし、サーバーで検証する。
-//
-// 出力（200、JSON / UTF-8）:
-//   {"candidates": [{"placeId": "ChIJ...", "name": "海の美術館", "address": "みなと町1-2-3"}]}
-//
-// エラー:
-//   400 INVALID_ARGUMENT: 入力が不正。
-//   401 UNAUTHENTICATED: トークンがない、または無効。
-//   429 RATE_LIMITED: リクエスト回数の上限を超えた。
-//   502 UPSTREAM_ERROR: Places API の呼び出しに失敗した。
-//   形式: {"error": {"code": "INVALID_ARGUMENT", "message": "入力が不正です", "details": {}}}
-//
-// 実装する処理:
-//   認証 → 入力チェック → Places API の呼び出し → 候補を JSON で返す。
+import (
+	"net/http"
+
+	"github.com/create-alt/gen-TLE/server/internal/service"
+)
+
+func Autocomplete(app *service.App) http.HandlerFunc {
+	return service.Handle(func(w http.ResponseWriter, r *http.Request) error {
+		query := r.URL.Query().Get("q")
+		if !service.Text(query, 1, 100) {
+			return service.Invalid("q は1〜100文字で指定してください")
+		}
+		near, err := service.Coordinates(r)
+		if err != nil {
+			return err
+		}
+		places, err := app.Maps.Autocomplete(r.Context(), query, near)
+		if err != nil {
+			return err
+		}
+		type candidate struct {
+			PlaceID string `json:"placeId"`
+			Name    string `json:"name"`
+			Address string `json:"address"`
+		}
+		candidates := []candidate{}
+		for _, place := range places {
+			candidates = append(candidates, candidate{PlaceID: place.PlaceID, Name: place.Name, Address: place.Address})
+		}
+		service.JSON(w, 200, map[string]any{"candidates": candidates})
+		return nil
+	})
+}
