@@ -1,0 +1,10 @@
+# 秘密情報と手元専用のファイルはイメージに入れない
+.env
+.env.*
+service-account*.json
+firebase-adminsdk*.json
+*.test
+firebase.json
+.firebaserc
+Dockerfile
+.dockerignore
