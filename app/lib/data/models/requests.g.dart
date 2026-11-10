@@ -48,6 +48,7 @@ _EndInput _$EndInputFromJson(Map<String, dynamic> json) => _EndInput(
       ? null
       : LatLng.fromJson(json['location'] as Map<String, dynamic>),
   name: json['name'] as String?,
+  date: json['date'] as String?,
   arriveBy: json['arriveBy'] as String,
 );
 
@@ -55,6 +56,7 @@ Map<String, dynamic> _$EndInputToJson(_EndInput instance) => <String, dynamic>{
   'placeId': ?instance.placeId,
   'location': ?instance.location?.toJson(),
   'name': ?instance.name,
+  'date': ?instance.date,
   'arriveBy': instance.arriveBy,
 };
 

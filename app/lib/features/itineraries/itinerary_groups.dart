@@ -20,12 +20,27 @@ class ItineraryGroups {
   factory ItineraryGroups.from(List<ItineraryListEntry> entries, DateTime now) {
     final todayDate = Format.isoDate(now);
     // YYYY-MM-DD は文字列の比較で日付の前後が決まる
-    final today = entries.where((e) => e.date == todayDate).toList();
+    final today = entries
+        .where(
+          (e) =>
+              e.date.compareTo(todayDate) <= 0 &&
+              Format.isoDate(e.end.arriveAt.toLocal()).compareTo(todayDate) >=
+                  0,
+        )
+        .toList();
     final upcoming =
         entries.where((e) => e.date.compareTo(todayDate) > 0).toList()
           ..sort((a, b) => a.date.compareTo(b.date));
-    final past = entries.where((e) => e.date.compareTo(todayDate) < 0).toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    final past =
+        entries
+            .where(
+              (e) =>
+                  Format.isoDate(e.end.arriveAt.toLocal())
+                      .compareTo(todayDate) <
+                  0,
+            )
+            .toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
     return ItineraryGroups(today: today, upcoming: upcoming, past: past);
   }
 

@@ -68,9 +68,14 @@ class PlanEndpoint {
       ? StartInput(placeId: placeId, departAt: departAt)
       : StartInput(location: location, name: name, departAt: departAt);
 
-  EndInput toEnd(String arriveBy) => placeId != null
-      ? EndInput(placeId: placeId, arriveBy: arriveBy)
-      : EndInput(location: location, name: name, arriveBy: arriveBy);
+  EndInput toEnd(String arriveBy, String date) => placeId != null
+      ? EndInput(placeId: placeId, date: date, arriveBy: arriveBy)
+      : EndInput(
+          location: location,
+          name: name,
+          date: date,
+          arriveBy: arriveBy,
+        );
 }
 
 /// 名前が空欄のとき、行き先からつける名前（例：朝市通り・海の美術館 ほか）
@@ -108,6 +113,7 @@ class PlanScreen extends HookConsumerWidget {
     // 終わる場所を選んでいなければ、出発地に戻る旅程にする
     final end = useState<PlanEndpoint?>(null);
     final date = useState(DateUtils.dateOnly(DateTime.now()));
+    final endDate = useState(date.value);
     final departAt = useState(
       const TimeOfDay(hour: _defaultDepartHour, minute: 0),
     );
@@ -164,6 +170,7 @@ class PlanScreen extends HookConsumerWidget {
         location: itinerary.end.location,
       );
       date.value = DateTime.parse(itinerary.date);
+      endDate.value = DateTime.parse(itinerary.end.date ?? itinerary.date);
       final (h, m) = Format.parseHhmm(itinerary.end.arriveBy);
       endBy.value = TimeOfDay(hour: h, minute: m);
       return null;
@@ -245,7 +252,18 @@ class PlanScreen extends HookConsumerWidget {
           Format.isoDate(picked) == current.date) {
         restoreStart(current.start);
       }
+      endDate.value = endDate.value.add(picked.difference(date.value));
       date.value = picked;
+    }
+
+    Future<void> pickEndDate() async {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: endDate.value,
+        firstDate: date.value,
+        lastDate: DateTime(9999, 12, 31),
+      );
+      if (context.mounted && picked != null) endDate.value = picked;
     }
 
     Future<void> pickDepart() async {
@@ -279,7 +297,21 @@ class PlanScreen extends HookConsumerWidget {
         showMessageSnackBar(context, AppStrings.planNeedStart);
         return;
       }
-      if (endBy.value.compareTo(departAt.value) <= 0) {
+      final departure = DateTime(
+        date.value.year,
+        date.value.month,
+        date.value.day,
+        departAt.value.hour,
+        departAt.value.minute,
+      );
+      final arrival = DateTime(
+        endDate.value.year,
+        endDate.value.month,
+        endDate.value.day,
+        endBy.value.hour,
+        endBy.value.minute,
+      );
+      if (!arrival.isAfter(departure)) {
         showMessageSnackBar(context, AppStrings.planInvalidTimeRange);
         return;
       }
@@ -303,7 +335,7 @@ class PlanScreen extends HookConsumerWidget {
               // 旅行日を変えると時刻表が変わるので、変えたときだけ送る
               date: dateText == current.date ? null : dateText,
               start: startLocked ? null : startPoint.toStart(departText),
-              end: endPoint.toEnd(endByText),
+              end: endPoint.toEnd(endByText, Format.isoDate(endDate.value)),
               places: places,
             ),
           );
@@ -319,7 +351,7 @@ class PlanScreen extends HookConsumerWidget {
               title: title.isEmpty ? autoTitle(entries.value) : title,
               date: dateText,
               start: startPoint.toStart(departText),
-              end: endPoint.toEnd(endByText),
+              end: endPoint.toEnd(endByText, Format.isoDate(endDate.value)),
               places: places,
             ),
           );
@@ -391,6 +423,26 @@ class PlanScreen extends HookConsumerWidget {
                         date: date.value,
                         onPickDate: pickDate,
                         titleController: titleInput,
+                      ),
+                      SizedBox(height: tokens.space8),
+                      Text(
+                        AppStrings.planEndDateLabel,
+                        style: context.texts.labelMedium,
+                      ),
+                      SizedBox(height: tokens.space4),
+                      _OutlinedField(
+                        height: tokens.inputHeight,
+                        radius: tokens.radiusMedium,
+                        onTap: pickEndDate,
+                        semanticLabel:
+                            '${AppStrings.planEndDateLabel} ${Format.monthDayWeekday(endDate.value)}${AppStrings.planChangeSuffix}',
+                        padding: EdgeInsets.symmetric(
+                          horizontal: tokens.space10,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(Format.monthDayWeekday(endDate.value)),
+                        ),
                       ),
                       SizedBox(height: tokens.space14),
                       _EndpointsCard(

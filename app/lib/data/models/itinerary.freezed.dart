@@ -1788,7 +1788,7 @@ $LatLngCopyWith<$Res>? get location {
 /// @nodoc
 mixin _$ItineraryEnd {
 
- String? get placeId; String get name; LatLng? get location;/// 着きたい時刻（HH:mm）
+ String? get placeId; String get name; LatLng? get location; String? get date;/// 着きたい時刻（HH:mm）
  String get arriveBy;/// 着く予定の時刻
  DateTime get arriveAt;
 /// Create a copy of ItineraryEnd
@@ -1804,20 +1804,20 @@ $ItineraryEndCopyWith<ItineraryEnd> get copyWith => _$ItineraryEndCopyWithImpl<I
 @override
 bool operator ==(Object other) {
   final _this = this as ItineraryEnd;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryEnd&&(identical(other.placeId, _this.placeId) || other.placeId == _this.placeId)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.location, _this.location) || other.location == _this.location)&&(identical(other.arriveBy, _this.arriveBy) || other.arriveBy == _this.arriveBy)&&(identical(other.arriveAt, _this.arriveAt) || other.arriveAt == _this.arriveAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItineraryEnd&&(identical(other.placeId, _this.placeId) || other.placeId == _this.placeId)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.location, _this.location) || other.location == _this.location)&&(identical(other.date, _this.date) || other.date == _this.date)&&(identical(other.arriveBy, _this.arriveBy) || other.arriveBy == _this.arriveBy)&&(identical(other.arriveAt, _this.arriveAt) || other.arriveAt == _this.arriveAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as ItineraryEnd;
-  return Object.hash(runtimeType,_this.placeId,_this.name,_this.location,_this.arriveBy,_this.arriveAt);
+  return Object.hash(runtimeType,_this.placeId,_this.name,_this.location,_this.date,_this.arriveBy,_this.arriveAt);
 }
 
 @override
 String toString() {
   final _this = this as ItineraryEnd;
-  return 'ItineraryEnd(placeId: ${_this.placeId}, name: ${_this.name}, location: ${_this.location}, arriveBy: ${_this.arriveBy}, arriveAt: ${_this.arriveAt})';
+  return 'ItineraryEnd(placeId: ${_this.placeId}, name: ${_this.name}, location: ${_this.location}, date: ${_this.date}, arriveBy: ${_this.arriveBy}, arriveAt: ${_this.arriveAt})';
 }
 
 
@@ -1828,7 +1828,7 @@ abstract mixin class $ItineraryEndCopyWith<$Res>  {
   factory $ItineraryEndCopyWith(ItineraryEnd value, $Res Function(ItineraryEnd) _then) = _$ItineraryEndCopyWithImpl;
 @useResult
 $Res call({
- String? placeId, String name, LatLng? location, String arriveBy, DateTime arriveAt
+ String? placeId, String name, LatLng? location, String? date, String arriveBy, DateTime arriveAt
 });
 
 
@@ -1845,12 +1845,13 @@ class _$ItineraryEndCopyWithImpl<$Res>
 
 /// Create a copy of ItineraryEnd
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? placeId = freezed,Object? name = null,Object? location = freezed,Object? arriveBy = null,Object? arriveAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? placeId = freezed,Object? name = null,Object? location = freezed,Object? date = freezed,Object? arriveBy = null,Object? arriveAt = null,}) {
   return _then(ItineraryEnd(
 placeId: freezed == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
 as String?,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
-as LatLng?,arriveBy: null == arriveBy ? _self.arriveBy : arriveBy // ignore: cast_nullable_to_non_nullable
+as LatLng?,date: freezed == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
+as String?,arriveBy: null == arriveBy ? _self.arriveBy : arriveBy // ignore: cast_nullable_to_non_nullable
 as String,arriveAt: null == arriveAt ? _self.arriveAt : arriveAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
   ));
@@ -1949,10 +1950,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? placeId,  String name,  LatLng? location,  String arriveBy,  DateTime arriveAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? placeId,  String name,  LatLng? location,  String? date,  String arriveBy,  DateTime arriveAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ItineraryEnd() when $default != null:
-return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arriveAt);case _:
+return $default(_that.placeId,_that.name,_that.location,_that.date,_that.arriveBy,_that.arriveAt);case _:
   return orElse();
 
 }
@@ -1970,10 +1971,10 @@ return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arr
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? placeId,  String name,  LatLng? location,  String arriveBy,  DateTime arriveAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? placeId,  String name,  LatLng? location,  String? date,  String arriveBy,  DateTime arriveAt)  $default,) {final _that = this;
 switch (_that) {
 case _ItineraryEnd():
-return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arriveAt);case _:
+return $default(_that.placeId,_that.name,_that.location,_that.date,_that.arriveBy,_that.arriveAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1990,10 +1991,10 @@ return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arr
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? placeId,  String name,  LatLng? location,  String arriveBy,  DateTime arriveAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? placeId,  String name,  LatLng? location,  String? date,  String arriveBy,  DateTime arriveAt)?  $default,) {final _that = this;
 switch (_that) {
 case _ItineraryEnd() when $default != null:
-return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arriveAt);case _:
+return $default(_that.placeId,_that.name,_that.location,_that.date,_that.arriveBy,_that.arriveAt);case _:
   return null;
 
 }
@@ -2005,12 +2006,13 @@ return $default(_that.placeId,_that.name,_that.location,_that.arriveBy,_that.arr
 @JsonSerializable()
 
 class _ItineraryEnd implements ItineraryEnd {
-  const _ItineraryEnd({this.placeId, required this.name, this.location, required this.arriveBy, required this.arriveAt});
+  const _ItineraryEnd({this.placeId, required this.name, this.location, this.date, required this.arriveBy, required this.arriveAt});
   factory _ItineraryEnd.fromJson(Map<String, dynamic> json) => _$ItineraryEndFromJson(json);
 
 @override final  String? placeId;
 @override final  String name;
 @override final  LatLng? location;
+@override final  String? date;
 /// 着きたい時刻（HH:mm）
 @override final  String arriveBy;
 /// 着く予定の時刻
@@ -2029,18 +2031,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryEnd&&(identical(other.placeId, placeId) || other.placeId == placeId)&&(identical(other.name, name) || other.name == name)&&(identical(other.location, location) || other.location == location)&&(identical(other.arriveBy, arriveBy) || other.arriveBy == arriveBy)&&(identical(other.arriveAt, arriveAt) || other.arriveAt == arriveAt));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItineraryEnd&&(identical(other.placeId, placeId) || other.placeId == placeId)&&(identical(other.name, name) || other.name == name)&&(identical(other.location, location) || other.location == location)&&(identical(other.date, date) || other.date == date)&&(identical(other.arriveBy, arriveBy) || other.arriveBy == arriveBy)&&(identical(other.arriveAt, arriveAt) || other.arriveAt == arriveAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,placeId,name,location,arriveBy,arriveAt);
+    return Object.hash(runtimeType,placeId,name,location,date,arriveBy,arriveAt);
 }
 
 @override
 String toString() {
-    return 'ItineraryEnd(placeId: $placeId, name: $name, location: $location, arriveBy: $arriveBy, arriveAt: $arriveAt)';
+    return 'ItineraryEnd(placeId: $placeId, name: $name, location: $location, date: $date, arriveBy: $arriveBy, arriveAt: $arriveAt)';
 }
 
 
@@ -2051,7 +2053,7 @@ abstract mixin class _$ItineraryEndCopyWith<$Res> implements $ItineraryEndCopyWi
   factory _$ItineraryEndCopyWith(_ItineraryEnd value, $Res Function(_ItineraryEnd) _then) = __$ItineraryEndCopyWithImpl;
 @override @useResult
 $Res call({
- String? placeId, String name, LatLng? location, String arriveBy, DateTime arriveAt
+ String? placeId, String name, LatLng? location, String? date, String arriveBy, DateTime arriveAt
 });
 
 
@@ -2068,12 +2070,13 @@ class __$ItineraryEndCopyWithImpl<$Res>
 
 /// Create a copy of ItineraryEnd
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? placeId = freezed,Object? name = null,Object? location = freezed,Object? arriveBy = null,Object? arriveAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? placeId = freezed,Object? name = null,Object? location = freezed,Object? date = freezed,Object? arriveBy = null,Object? arriveAt = null,}) {
   return _then(_ItineraryEnd(
 placeId: freezed == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
 as String?,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
-as LatLng?,arriveBy: null == arriveBy ? _self.arriveBy : arriveBy // ignore: cast_nullable_to_non_nullable
+as LatLng?,date: freezed == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
+as String?,arriveBy: null == arriveBy ? _self.arriveBy : arriveBy // ignore: cast_nullable_to_non_nullable
 as String,arriveAt: null == arriveAt ? _self.arriveAt : arriveAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
   ));

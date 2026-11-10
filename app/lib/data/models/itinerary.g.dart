@@ -141,6 +141,7 @@ _ItineraryEnd _$ItineraryEndFromJson(Map<String, dynamic> json) =>
       location: json['location'] == null
           ? null
           : LatLng.fromJson(json['location'] as Map<String, dynamic>),
+      date: json['date'] as String?,
       arriveBy: json['arriveBy'] as String,
       arriveAt: DateTime.parse(json['arriveAt'] as String),
     );
@@ -150,6 +151,7 @@ Map<String, dynamic> _$ItineraryEndToJson(_ItineraryEnd instance) =>
       'placeId': ?instance.placeId,
       'name': instance.name,
       'location': ?instance.location?.toJson(),
+      'date': ?instance.date,
       'arriveBy': instance.arriveBy,
       'arriveAt': instance.arriveAt.toIso8601String(),
     };

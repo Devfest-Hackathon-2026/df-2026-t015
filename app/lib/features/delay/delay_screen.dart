@@ -91,7 +91,7 @@ class DelayScreen extends HookConsumerWidget {
                   if (current != null) ...[
                     SizedBox(height: tokens.space6),
                     Text(
-                      '${AppStrings.delayCurrentPrefix}${current.name}（${Format.time(current.endAt)}${AppStrings.delayCurrentStaySuffix}）',
+                      '${AppStrings.delayCurrentPrefix}${current.name}（${Format.dateTime(current.endAt)}${AppStrings.delayCurrentStaySuffix}）',
                       style: context.texts.bodyMedium?.copyWith(
                         color: context.colors.onSurfaceVariant,
                       ),

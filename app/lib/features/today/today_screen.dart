@@ -141,7 +141,7 @@ class _TodayBody extends HookWidget {
               Expanded(
                 child: SummaryTile(
                   label: AppStrings.todayEndAt,
-                  value: Format.time(summary.endAt),
+                  value: Format.dateTime(summary.endAt, date: itinerary.date),
                 ),
               ),
             ],
@@ -153,10 +153,30 @@ class _TodayBody extends HookWidget {
             ),
           ],
           SizedBox(height: tokens.space16),
-          for (final item in itinerary.items) ...[
+          for (final (index, item) in itinerary.items.indexed) ...[
+            if (index == 0 ||
+                Format.isoDate(item.startAt.toLocal()) !=
+                    Format.isoDate(
+                      itinerary.items[index - 1].startAt.toLocal(),
+                    ))
+              Padding(
+                padding: EdgeInsets.only(top: tokens.space8),
+                child: Text(
+                  Format.dateJa(Format.isoDate(item.startAt.toLocal())),
+                  style: context.texts.titleSmall,
+                ),
+              ),
             if (legsByTo[item.itemId] case final leg?) _LegRow(leg: leg),
             _ItemRow(item: item),
           ],
+          if (legsByTo[Leg.endItemId] case final leg?) _LegRow(leg: leg),
+          Padding(
+            padding: EdgeInsets.only(top: tokens.space8),
+            child: Text(
+              '${Format.dateTime(itinerary.end.arriveAt, date: itinerary.date)} ${itinerary.end.name}',
+              style: context.texts.titleSmall,
+            ),
+          ),
           if (itinerary.dropped.isNotEmpty) ...[
             SizedBox(height: tokens.space16),
             NoticeCard(
@@ -244,7 +264,10 @@ class _ItemRow extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  Format.time(item.endAt),
+                  Format.dateTime(
+                    item.endAt,
+                    date: Format.isoDate(item.startAt.toLocal()),
+                  ),
                   style: texts.labelMedium?.copyWith(color: muted),
                 ),
               ],
@@ -343,7 +366,7 @@ class _LegRow extends StatelessWidget {
         tokens.legLineWidth;
     final text = leg.mode == TransitMode.walk
         ? '${leg.mode.label} ${Format.duration(leg.durationMin)}'
-        : '${leg.mode.label} ${Format.duration(leg.durationMin)}・${Format.time(leg.departAt)}${AppStrings.departSuffix}';
+        : '${leg.mode.label} ${Format.duration(leg.durationMin)}・${Format.dateTime(leg.departAt)}${AppStrings.departSuffix}';
 
     return Padding(
       padding: EdgeInsets.only(left: lineInset),

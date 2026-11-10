@@ -1,4 +1,5 @@
 import '../../constants/api_constraints.dart';
+import '../../utils/format.dart';
 import '../models/models.dart';
 import 'api_exception.dart';
 import 'itinerary_api.dart';
@@ -105,7 +106,26 @@ class MockItineraryApi implements ItineraryApi {
     return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
-  DateTime _at(String date, String hhmm) => DateTime.parse('${date}T$hhmm:00');
+  DateTime _at(String date, String hhmm) {
+    final value = DateTime.tryParse('${date}T$hhmm:00');
+    if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date) ||
+        !RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(hhmm) ||
+        value == null ||
+        Format.isoDate(value) != date) {
+      throw const ApiException(
+        statusCode: 400,
+        code: ApiErrorCode.invalidArgument,
+        message: '日付と時刻を正しく指定してください',
+      );
+    }
+    return value;
+  }
+
+  String _shiftEndDate(Itinerary itinerary, String date) {
+    final days = DateTime.parse(itinerary.end.date ?? itinerary.date)
+        .difference(DateTime.parse(itinerary.date));
+    return Format.isoDate(DateTime.parse(date).add(days));
+  }
 
   /// 出発地・終わる場所の入力を、施設なら名前と位置で埋める
   _Endpoint _endpoint(String? placeId, LatLng? location, String? name) {
@@ -252,10 +272,20 @@ class MockItineraryApi implements ItineraryApi {
 
     /// HH:mm
     required String arriveBy,
+    String? endDate,
     required List<PlaceInput> places,
   }) {
     final now = _clock();
     final departDateTime = _at(date, departAt);
+    final resolvedEndDate = endDate ?? date;
+    final deadline = _at(resolvedEndDate, arriveBy);
+    if (!deadline.isAfter(departDateTime)) {
+      throw const ApiException(
+        statusCode: 400,
+        code: ApiErrorCode.invalidArgument,
+        message: '終了日時は出発日時より後にしてください',
+      );
+    }
     final items = <Item>[];
     final legs = <Leg>[];
     var cursor = departDateTime;
@@ -305,6 +335,13 @@ class MockItineraryApi implements ItineraryApi {
       prevId = itemId;
     }
     final toEnd = leg(Leg.endItemId);
+    if (toEnd.arriveAt.isAfter(deadline)) {
+      throw const ApiException(
+        statusCode: 422,
+        code: ApiErrorCode.endInfeasible,
+        message: '終了日時までに終わる場所に着けません',
+      );
+    }
     legs.add(toEnd);
 
     return Itinerary(
@@ -323,12 +360,14 @@ class MockItineraryApi implements ItineraryApi {
         name: end.name,
         location: end.location,
         arriveBy: arriveBy,
+        date: resolvedEndDate,
         arriveAt: toEnd.arriveAt,
       ),
       items: items,
       legs: legs,
       summary: _summarize(items, legs, toEnd.arriveAt),
-      expiresAt: DateTime.parse(date).add(ApiConstraints.itineraryTtl),
+      expiresAt: DateTime.parse(resolvedEndDate)
+          .add(ApiConstraints.itineraryTtl),
     );
   }
 
@@ -348,8 +387,9 @@ class MockItineraryApi implements ItineraryApi {
   String _hhmm(DateTime t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  bool _isLate(Itinerary itinerary, DateTime arriveAt) =>
-      arriveAt.isAfter(_at(itinerary.date, itinerary.end.arriveBy));
+  bool _isLate(Itinerary itinerary, DateTime arriveAt) => arriveAt.isAfter(
+    _at(itinerary.end.date ?? itinerary.date, itinerary.end.arriveBy),
+  );
 
   Itinerary _require(String id) =>
       _itineraries[id] ??
@@ -419,6 +459,7 @@ class MockItineraryApi implements ItineraryApi {
       departAt: s.departAt,
       end: _endpoint(e.placeId, e.location, e.name),
       arriveBy: e.arriveBy,
+      endDate: e.date,
       places: request.places,
     );
     _save(itinerary);
@@ -489,6 +530,9 @@ class MockItineraryApi implements ItineraryApi {
           ? _endpointOfEnd(current.end)
           : _endpoint(e.placeId, e.location, e.name),
       arriveBy: e?.arriveBy ?? current.end.arriveBy,
+      endDate: e == null
+          ? _shiftEndDate(current, request.date ?? current.date)
+          : e.date,
       places: request.places,
     );
     _save(updated);
@@ -545,6 +589,7 @@ class MockItineraryApi implements ItineraryApi {
           type: ChangeType.keep,
           itemId: keep.itemId,
           before: ChangeSnapshot(name: keep.name, startAt: keep.startAt),
+          after: ChangeSnapshot(startAt: keep.startAt.add(delay)),
           note: keep.priority == Priority.must ? '必須のため残す' : null,
         ),
     ];
@@ -564,8 +609,23 @@ class MockItineraryApi implements ItineraryApi {
                 .add(const Duration(minutes: _shortStayMin)),
             price: _replacementPrice,
           )
+        else if (item.startAt.isAfter(current.startAt))
+          item.copyWith(
+            startAt: item.startAt.add(delay),
+            endAt: item.endAt.add(delay),
+          )
         else
           item,
+    ];
+    final previewLegs = [
+      for (final leg in itinerary.legs)
+        if (!leg.departAt.isBefore(current.endAt))
+          leg.copyWith(
+            departAt: leg.departAt.add(delay),
+            arriveAt: leg.arriveAt.add(delay),
+          )
+        else
+          leg,
     ];
     // 簡易的に、遅れた分だけ終わる場所に着く時刻も遅れるとする
     final endAtAfter = itinerary.end.arriveAt.add(delay);
@@ -575,8 +635,8 @@ class MockItineraryApi implements ItineraryApi {
       optionId: 'op_1',
       changes: changes,
       summaryBefore: itinerary.summary,
-      summaryAfter: _summarize(previewItems, itinerary.legs, endAtAfter),
-      preview: ReplanPreview(items: previewItems, legs: itinerary.legs),
+      summaryAfter: _summarize(previewItems, previewLegs, endAtAfter),
+      preview: ReplanPreview(items: previewItems, legs: previewLegs),
     );
     final result = ReplanResult(
       replanId: replanId,
@@ -833,10 +893,17 @@ class MockItineraryApi implements ItineraryApi {
       departAt: _hhmm(source.start.departAt),
       end: _endpointOfEnd(source.end),
       arriveBy: source.end.arriveBy,
+      endDate: _shiftEndDate(source, request.date),
       places: _inputsOf(source),
     );
-    _save(copy);
-    return copy;
+    final upcoming = copy.copyWith(
+      items: [
+        for (final item in copy.items)
+          item.copyWith(status: ItemStatus.upcoming),
+      ],
+    );
+    _save(upcoming);
+    return upcoming;
   }
 }
 

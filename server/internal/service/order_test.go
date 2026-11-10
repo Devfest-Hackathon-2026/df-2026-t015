@@ -78,7 +78,7 @@ func TestGeminiRetriesInvalidOutputOnce(t *testing.T) {
 }
 
 func TestArrangeFallsBackWhenAIFails(t *testing.T) {
-	app := App{Maps: &Maps{HTTP: testHTTP(`{"routes":[{"duration":"600s"}]}`)}, AI: &Gemini{HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	app := App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}, AI: &Gemini{HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 429, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("{}"))}, nil
 	})}}}
 	places := linePlaces()
@@ -145,7 +145,7 @@ func TestGeminiRetryDoesNotKeepFailedAttempt(t *testing.T) {
 }
 
 func TestArrangeReturnsInfeasibleWhenAIFails(t *testing.T) {
-	app := App{Maps: &Maps{HTTP: testHTTP(`{"routes":[{"duration":"600s"}]}`)}, AI: &Gemini{HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	app := App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}, AI: &Gemini{HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 429, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("{}"))}, nil
 	})}}}
 	places := linePlaces()
