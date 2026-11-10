@@ -62,6 +62,8 @@ curl -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
 
 ## 公開（Cloud Run と Firebase Hosting）
 
+事前準備・動作確認・切り戻しを含めた詳しい手順は [docs/deploy.md](../docs/deploy.md) にまとめています。
+
 Go の API サーバーは Cloud Run で動かし、Flutter の Web 版は Firebase Hosting で配信します。リポジトリ直下の `firebase.json` で、Hosting の `/api/**` を Cloud Run のサービス `iterinerary-api`（asia-northeast1）に転送します。アプリと API が同じドメインになるので、CORS は要りません。
 
 ```
