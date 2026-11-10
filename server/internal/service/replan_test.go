@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -89,7 +90,7 @@ func TestReplanKeepsAlgorithmOptionsWhenAIIsInvalid(t *testing.T) {
 		Items: []Item{{ItemID: "a", PlaceID: "p1", Priority: "must", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", Priority: "want", StartAt: "2026-11-14T10:10:00+09:00", EndAt: "2026-11-14T11:10:00+09:00", StayMin: 60}},
 		Legs:  []Leg{{FromItemID: "a", ToItemID: "b", DurationMin: 10}}}
 	for _, malformed := range []string{`{}`, `null`, `{"options":[{"placeIds":null}]}`, `{"options":[{"label":"x","placeIds":["invented"]}]}`, `not json`} {
-		app := App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}, AI: geminiReturning(malformed)}
+		app := App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}, AI: geminiReturning(malformed)}
 		delay := 20
 		result, err := app.Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
 		if err != nil {
@@ -134,7 +135,7 @@ func TestExplanationFactsAndReasons(t *testing.T) {
 }
 func TestReplanRetimesAbsorbedDelay(t *testing.T) {
 	trip := Itinerary{ID: "trip", Version: 1, Date: "2026-11-14", End: End{PlaceID: ref("end"), Name: "駅", ArriveBy: "17:00"}, Items: []Item{{ItemID: "a", PlaceID: "p1", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "p2", StartAt: "2026-11-14T11:00:00+09:00", EndAt: "2026-11-14T12:00:00+09:00", StayMin: 60}}, Legs: []Leg{{ToItemID: "b", DurationMin: 10}}}
-	app := App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}}
+	app := App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}}
 	delay := 5
 	for _, items := range [][]Item{trip.Items, trip.Items[:1]} {
 		trip.Items = items
@@ -161,7 +162,7 @@ func TestSuggestRejectsMissingAIField(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
-	app := App{Maps: &Maps{HTTP: client, Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}, AI: &Gemini{HTTP: testHTTP(`{"candidates":[{"content":{"parts":[{"text":"{}"}]},"finishReason":"STOP"}]}`)}}
+	app := App{Maps: &Maps{HTTP: routesHTTP(client, 10)}, AI: &Gemini{HTTP: testHTTP(`{"candidates":[{"content":{"parts":[{"text":"{}"}]},"finishReason":"STOP"}]}`)}}
 	trip := Itinerary{Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"}}
 	from, _ := time.Parse(time.RFC3339, "2026-11-14T10:00:00+09:00")
 	if _, err := app.Suggest(t.Context(), trip, from, from.Add(time.Hour), ""); err == nil || APIError(err).Status != 502 {
@@ -174,7 +175,7 @@ func TestReplanWarnsWhenEndPlaceIsLate(t *testing.T) {
 		Items: []Item{{ItemID: "a", PlaceID: "p1", StartAt: "2026-11-14T09:00:00+09:00", EndAt: "2026-11-14T10:00:00+09:00", StayMin: 60}},
 		Legs:  []Leg{{FromItemID: "a", ToItemID: "end", DurationMin: 10, DepartAt: "2026-11-14T10:00:00+09:00", ArriveAt: "2026-11-14T10:10:00+09:00"}}}
 	delay := 30
-	result, err := (&App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}}).Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
+	result, err := (&App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}}).Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
 	if err != nil || len(result.Options) != 1 {
 		t.Fatalf("%+v %v", result, err)
 	}
@@ -196,7 +197,7 @@ func TestReplanReturnsAtMostFiveOptions(t *testing.T) {
 		Legs:  []Leg{{FromItemID: "a", ToItemID: "b", DurationMin: 10}}}
 	// AI がスキーマを超えて4案、しかもすべて異なる案を返しても、AI の案は3案までにする。
 	ai := `{"options":[{"label":"1","placeIds":["p3","p2"]},{"label":"2","placeIds":["p3"]},{"label":"3","placeIds":["p2"]},{"label":"4","placeIds":[]}]}`
-	app := App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}, AI: geminiReturning(ai)}
+	app := App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}, AI: geminiReturning(ai)}
 	delay := 20
 	result, err := app.Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
 	if err != nil || len(result.Options) > MaxReplanOptions {
@@ -229,7 +230,7 @@ func TestReplanSkipsAIOptionWhosePlaceCannotBeLoaded(t *testing.T) {
 		}
 		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
-	app := App{Maps: &Maps{HTTP: client, Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}, AI: geminiReturning(`{"options":[{"label":"代替施設へ","placeIds":["broken"]}]}`)}
+	app := App{Maps: &Maps{HTTP: routesHTTP(client, 10)}, AI: geminiReturning(`{"options":[{"label":"代替施設へ","placeIds":["broken"]}]}`)}
 	delay := 20
 	result, err := app.Replan(context.Background(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
 	if err != nil || len(result.Options) != 2 || result.Options[0].Source != "algorithm" || result.Options[1].Source != "algorithm" {
@@ -247,23 +248,25 @@ func TestSuggestChecksOnwardTransitFromTheActualDeparture(t *testing.T) {
 		case strings.HasPrefix(r.URL.Path, "/v1/places/"):
 			id := strings.TrimPrefix(r.URL.Path, "/v1/places/")
 			body = `{"id":"` + id + `","displayName":{"text":"` + id + `"},"location":{"latitude":35,"longitude":139}}`
-		case strings.Contains(r.URL.Path, "/toolbox/"):
-			body = `{"ResultSet":{"Condition":"rail-bus-walk"}}`
-		case strings.Contains(r.URL.Path, "/search/course/"):
-			query := r.URL.Query()
-			departure, err := time.ParseInLocation("200601021504", query.Get("date")+query.Get("time"), JST)
-			if err != nil {
+		case r.URL.Host == "routes.googleapis.com":
+			var request routeRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				return nil, err
 			}
-			duration := 5 * time.Minute
-			if strings.HasPrefix(query.Get("viaList"), "35.001,139:") && departure.Equal(from) {
-				duration = 50 * time.Minute
+			// 徒歩・車は50分。カフェからの公共交通は、空き時間の開始（13:00）に出ると次の便まで待つため50分、
+			// 滞在後に出れば5分。それ以外の公共交通は5分。
+			body = routeBody(50 * 60)
+			if request.Mode == "TRANSIT" {
+				seconds := 5 * 60
+				if departure, _ := time.Parse(time.RFC3339, request.Departure); request.Origin.lat() == 35.001 && departure.Equal(from) {
+					seconds = 50 * 60
+				}
+				body = transitBody(seconds, "HEAVY_RAIL", "鉄道")
 			}
-			body = transitResponse(transitLine("train", "鉄道", departure.Format(time.RFC3339), departure.Add(duration).Format(time.RFC3339)))
 		}
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
-	app := App{Maps: &Maps{HTTP: client, Transit: &Transit{Key: "test", HTTP: client}}, AI: geminiReturning(`{"ideas":[],"suggestions":[{"placeId":"cafe","reason":"港を眺めて休憩できる","stayMin":30}]}`)}
+	app := App{Maps: &Maps{HTTP: client}, AI: geminiReturning(`{"ideas":[],"suggestions":[{"placeId":"cafe","reason":"港を眺めて休憩できる","stayMin":30}]}`)}
 	trip := Itinerary{Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-14T09:00:00+09:00"}, End: End{PlaceID: ref("start"), ArriveBy: "17:00"},
 		Items: []Item{{ItemID: "a", PlaceID: "p1", StartAt: "2026-11-14T12:00:00+09:00", EndAt: "2026-11-14T13:00:00+09:00"}, {ItemID: "b", PlaceID: "p2", StartAt: "2026-11-14T14:00:00+09:00", EndAt: "2026-11-14T15:00:00+09:00"}}}
 	result, err := app.Suggest(context.Background(), trip, from, from.Add(time.Hour), "a")
@@ -278,7 +281,7 @@ func TestEditAcceptsFixedItemExtendedByDelay(t *testing.T) {
 		Start: Start{PlaceID: ref("start"), Name: "start", Location: &Point{Lat: 35, Lng: 139}, DepartAt: "2026-11-14T08:00:00+09:00"},
 		End:   End{PlaceID: ref("start"), Name: "start", Location: &Point{Lat: 35, Lng: 139}, ArriveBy: "20:00"},
 		Items: []Item{{ItemID: "a", PlaceID: "p1", Name: "p1", Priority: "must", StayMin: 520, Status: "current", StartAt: "2026-11-14T08:10:00+09:00", EndAt: "2026-11-14T16:50:00+09:00"}}}
-	app := App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}}
+	app := App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}}
 	value, err := app.Edit(context.Background(), trip, EditInput{Places: []Visit{{PlaceID: "p1", Priority: "must", StayMin: 520}}})
 	if err != nil || len(value.Items) != 1 || value.Items[0].StayMin != 520 || value.End.ArriveAt != "2026-11-14T17:00:00+09:00" {
 		t.Fatalf("%+v %v", value, err)

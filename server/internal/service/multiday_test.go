@@ -56,7 +56,7 @@ func TestNextDayOpening(t *testing.T) {
 
 func TestOvernightCopy(t *testing.T) {
 	input := overnightInput(t)
-	app := &App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}}
+	app := &App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}}
 	trip, err := app.schedule(t.Context(), input, map[string]Place{}, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestOvernightCopy(t *testing.T) {
 }
 
 func TestEditSecondDay(t *testing.T) {
-	app := &App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}, AI: geminiReturning(`{"placeIds":["b"]}`)}
+	app := &App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}, AI: geminiReturning(`{"placeIds":["b"]}`)}
 	trip := Itinerary{Title: "二日間", Date: "2026-11-20", Start: Start{PlaceID: ref("a"), DepartAt: "2026-11-20T23:00:00+09:00"}, End: End{Date: "2026-11-21", PlaceID: ref("a"), ArriveBy: "18:00"}, Items: []Item{{ItemID: "fixed", PlaceID: "a", Name: "A", Status: "current", Priority: "must", StayMin: 60, StartAt: "2026-11-21T09:00:00+09:00", EndAt: "2026-11-21T10:00:00+09:00"}}}
 	next, err := app.Edit(t.Context(), trip, EditInput{Places: []Visit{{PlaceID: "a", Priority: "must", StayMin: 60}, {PlaceID: "b", Priority: "must", StayMin: 60}}})
 	if err != nil {
@@ -86,7 +86,7 @@ func TestEditSecondDay(t *testing.T) {
 }
 
 func TestSuggestionsSecondDay(t *testing.T) {
-	app := &App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}, AI: geminiReturning(`{"suggestions":[],"ideas":[]}`)}
+	app := &App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}, AI: geminiReturning(`{"suggestions":[],"ideas":[]}`)}
 	trip := Itinerary{Date: "2026-11-20", Start: Start{PlaceID: ref("a"), DepartAt: "2026-11-20T23:00:00+09:00"}, End: End{Date: "2026-11-21", PlaceID: ref("a"), ArriveBy: "18:00"}, Items: []Item{{ItemID: "a", PlaceID: "a", EndAt: "2026-11-21T10:00:00+09:00"}}}
 	from, _ := time.Parse(time.RFC3339, "2026-11-21T11:00:00+09:00")
 	if _, err := app.Suggest(t.Context(), trip, from, from.Add(time.Hour), "a"); err != nil {
@@ -95,7 +95,7 @@ func TestSuggestionsSecondDay(t *testing.T) {
 }
 
 func TestDelayUsesNewService(t *testing.T) {
-	app := &App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(25)}}}
+	app := &App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 25)}}
 	trip := Itinerary{Date: "2026-11-20", End: End{Date: "2026-11-21", PlaceID: ref("end"), ArriveBy: "18:00"}, Items: []Item{{ItemID: "a", PlaceID: "a", EndAt: "2026-11-21T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "b", StartAt: "2026-11-21T11:00:00+09:00", EndAt: "2026-11-21T12:00:00+09:00"}}, Legs: []Leg{{FromItemID: "a", ToItemID: "b", DurationMin: 10}, {FromItemID: "b", ToItemID: "end", ArriveAt: "2026-11-21T12:10:00+09:00"}}}
 	delay := 5
 	result, err := app.Replan(t.Context(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})
@@ -110,7 +110,7 @@ func TestDelayUsesNewService(t *testing.T) {
 
 func TestSuggestionsSkipUnreachablePlace(t *testing.T) {
 	places := testHTTP(`{"places":[{"id":"cafe","displayName":{"text":"カフェ"},"location":{"latitude":35.001,"longitude":139}}]}`)
-	app := &App{Maps: &Maps{HTTP: places, Transit: &Transit{Key: "test", HTTP: transitClient(`{"ResultSet":{"apiVersion":"1","Course":[]}}`, 200)}}}
+	app := &App{Maps: &Maps{HTTP: routesHTTP(places, -1)}}
 	from, _ := At("2026-11-21", "10:00")
 	candidates, err := app.gapCandidates(t.Context(), Itinerary{}, Waypoint{Location: Point{Lat: 35, Lng: 139}, HasLocation: true}, Waypoint{Location: Point{Lat: 34, Lng: 139}, HasLocation: true}, Point{Lat: 35, Lng: 139}, from, from.Add(time.Hour))
 	if err != nil || len(candidates) != 0 {
@@ -119,7 +119,7 @@ func TestSuggestionsSkipUnreachablePlace(t *testing.T) {
 }
 
 func TestEditDateKeepsTripLength(t *testing.T) {
-	app := &App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}}
+	app := &App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}}
 	for _, endDay := range []string{"", "2026-11-21"} {
 		trip := Itinerary{Title: "旅", Date: "2026-11-20", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-20T09:00:00+09:00"}, End: End{PlaceID: ref("end"), Date: endDay, ArriveBy: "18:00"}, Items: []Item{{ItemID: "a", PlaceID: "a", Priority: "must", StayMin: 30}}}
 		date := "2026-12-01"
@@ -138,7 +138,7 @@ func TestEditDateKeepsTripLength(t *testing.T) {
 }
 
 func TestAddSecondDay(t *testing.T) {
-	app := &App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}}
+	app := &App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}}
 	trip := Itinerary{Title: "旅", Date: "2026-11-20", Start: Start{PlaceID: ref("start"), DepartAt: "2026-11-20T23:00:00+09:00"}, End: End{PlaceID: ref("end"), Date: "2026-11-21", ArriveBy: "18:00"}, Items: []Item{{ItemID: "a", PlaceID: "a", Priority: "must", StayMin: 30, StartAt: "2026-11-21T09:00:00+09:00", EndAt: "2026-11-21T09:30:00+09:00"}}}
 	next, err := app.Add(t.Context(), trip, AddInput{PlaceID: "b", Priority: "want", StayMin: 30, InsertAfterItemID: "a"})
 	if err != nil {
@@ -150,7 +150,7 @@ func TestAddSecondDay(t *testing.T) {
 }
 
 func TestReplanCanDropUnreachableNextPlace(t *testing.T) {
-	app := &App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitClient(`{"ResultSet":{"apiVersion":"1","Course":[]}}`, 200)}}}
+	app := &App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), -1)}}
 	trip := Itinerary{Title: "旅", Date: "2026-11-20", Start: Start{PlaceID: ref("a"), DepartAt: "2026-11-20T23:00:00+09:00"}, End: End{PlaceID: ref("a"), Date: "2026-11-21", ArriveBy: "18:00"}, Items: []Item{{ItemID: "a", PlaceID: "a", EndAt: "2026-11-21T10:00:00+09:00", StayMin: 60}, {ItemID: "b", PlaceID: "b", Priority: "want", StayMin: 30, StartAt: "2026-11-21T10:10:00+09:00", EndAt: "2026-11-21T10:40:00+09:00"}}}
 	delay := 20
 	result, err := app.Replan(t.Context(), trip, ReplanInput{CurrentItemID: "a", DelayMin: &delay})

@@ -75,10 +75,19 @@ Firebase Authentication ─ ID トークン ───────────▶
 | Firebase Authentication | ID トークンの検証（Admin SDK） | 不要（公開鍵で検証） | 同左 |
 | Firestore | `itineraries` / `replans` / `rateLimits` コレクション | 実行サービスアカウント | 同左 |
 | Places API (New) | autocomplete / searchText / searchNearby / Place Details | `X-Goog-Api-Key` | OAuth トークン + `X-Goog-User-Project` |
-| Routes API | `directions/v2:computeRoutes`（徒歩・公共交通） | `X-Goog-Api-Key` | OAuth トークン + `X-Goog-User-Project` |
+| Routes API | `directions/v2:computeRoutes`（徒歩・車・公共交通） | `X-Goog-Api-Key` | OAuth トークン + `X-Goog-User-Project` |
 | Gemini | キーあり：`generativelanguage.googleapis.com`（AI Studio） | `x-goog-api-key` | Vertex AI：`aiplatform.googleapis.com` |
 
 起動時のログに `Gemini: ... / Maps: ...` と、どちらの方式で呼ぶかが出ます。デプロイ後はまずこのログを確認してください。
+
+経路は Google の Routes API だけで求めます（`server/internal/service/routes.go`）。区間ごとに徒歩・車・公共交通の3つを**並行して**問い合わせ、次の順に選びます。
+
+1. 徒歩が20分以内 → 徒歩（`walk`）
+2. 公共交通の結果がある → 電車（`train`）またはバス（`bus`）。路線名つき
+3. 車の結果がある → 車（`taxi`。アプリでは「タクシー」と表示）
+4. 車もない → 徒歩
+
+Routes API は日本の公共交通をほとんど返さないため、国内では20分を超える区間はほぼ車になります。追加の外部サービスやキーは要りません。
 
 ### 2.4 タイムアウトと上限
 
@@ -226,11 +235,13 @@ gcloud run deploy iterinerary-api \
 
 ```sh
 URL=$(gcloud run services describe iterinerary-api --region asia-northeast1 --format='value(status.url)')
-curl -i "$URL/healthz"                         # 200 なら起動している
+curl -i "$URL/me/itineraries"                  # JSON の 401 が返れば起動している
 gcloud run services logs read iterinerary-api --region asia-northeast1 --limit 20
 ```
 
 ログはコンソールの Cloud Run →「iterinerary-api」→「ログ」でも見られます。
+
+`*.run.app` の URL では `/healthz` のように `z` で終わる一部のパスが Google 側で予約されていて、コンテナに届かず Google の HTML の 404 が返ります。起動の確認には、上のように認証が必要な API を使い、**JSON の 401** が返ることを確かめてください。
 
 ログに `Gemini: ... / Maps: ...` と `API listening on :8080` が出ていれば正常です。`FIREBASE_PROJECT_ID を設定してください` などが出ていたら、環境変数を見直します。
 
@@ -240,16 +251,31 @@ gcloud run services logs read iterinerary-api --region asia-northeast1 --limit 2
 WEB_API_KEY=<Firebase の Web API キー>
 TOKEN=$(curl -s "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$WEB_API_KEY" \
   -H 'Content-Type: application/json' -d '{"returnSecureToken":true}' | sed -n 's/.*"idToken": *"\([^"]*\)".*/\1/p')
-curl -s -H "Authorization: Bearer $TOKEN" "$URL/places/autocomplete?q=東京駅"   # Maps との連携
+curl -s --get -H "Authorization: Bearer $TOKEN" --data-urlencode "q=東京駅" "$URL/places/autocomplete"   # Places との連携
 curl -s -H "Authorization: Bearer $TOKEN" "$URL/me/itineraries"                 # Firestore との連携
 ```
+
+日本語をクエリに入れるときは、上のように `--data-urlencode` を使います。URL にそのまま書くと、Google のフロントエンドが HTML の 400 を返します。
+
+Routes API が使えるかは、自分のアカウントで直接確かめられます（`DRIVE` を `WALK` に変えると徒歩）。
+
+```sh
+curl -s -X POST https://routes.googleapis.com/directions/v2:computeRoutes \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "X-Goog-User-Project: <PROJECT_ID>" \
+  -H "X-Goog-FieldMask: routes.duration" -H "Content-Type: application/json" \
+  -d '{"origin":{"address":"東京駅"},"destination":{"address":"新大阪駅"},"travelMode":"DRIVE","languageCode":"ja"}'
+```
+
+`{"routes":[{"duration":"..."}]}` が返れば使えます。
 
 - `401`：トークンが無い・期限切れ、または `FIREBASE_PROJECT_ID` がトークンのプロジェクトと違う。
 - `502 UPSTREAM_ERROR`：外部サービス（Maps・Gemini）か Firestore の呼び出しに失敗した。**今のサーバーはエラーの詳細をログに出さず、すべてこのコードにまとめます**。次の順に切り分けてください。
   - `/places/autocomplete` だけ失敗する → Maps（Places API の有効化、キーの API 制限、ADC なら `roles/serviceusage.serviceUsageConsumer`）
+  - 旅程の作成（`POST /itineraries`）だけ失敗する → Routes（Routes API の有効化、キーの API 制限、ADC なら `roles/serviceusage.serviceUsageConsumer`）
   - `/me/itineraries` だけ失敗する → Firestore（データベースの作成、`roles/datastore.user`、4.4 の複合インデックスが「有効」になっているか）
   - `POST /places/interpret` だけ失敗する → Gemini（`GEMINI_MODEL` のモデル名、キー、ADC なら `roles/aiplatform.user` と `GOOGLE_CLOUD_LOCATION`）
   - キーが原因か調べるときは、同じキーで Google の API を直接 `curl` で呼ぶと、エラーの理由が返ってきます。
+- `422 ROUTE_NOT_FOUND`：Routes API が徒歩・車・公共交通のどれでも経路を返さなかった（離島など）。
 - `429 RATE_LIMITED`：1 分 120 リクエストの上限か、外部サービスの割り当ての上限。
 
 ### 4.3 Flutter Web をビルドする
@@ -292,7 +318,7 @@ done
 ### 4.5 全体の動作確認
 
 ```sh
-curl -i https://<PROJECT_ID>.web.app/api/healthz      # Hosting → Cloud Run の転送（/api を外せているか）
+curl -i https://<PROJECT_ID>.web.app/api/me/itineraries   # JSON の 401 なら Hosting → Cloud Run の転送と /api の除去ができている
 ```
 
 ブラウザで `https://<PROJECT_ID>.web.app` を開き、次の順に確認します。
@@ -351,6 +377,8 @@ flutter run -d chrome \
 
 - **アプリの受信タイムアウト（15 秒）がサーバーの上限（60 秒）より短い**：#2（Gemini を 2 回呼ぶ）、#3（Gemini と Routes を何度も呼ぶ）、#7・#10 は、混んでいると 15 秒を超えることがあります。その場合、サーバーは処理を続けていてもアプリ側はタイムアウトのエラーになります。本番で多発するようなら、`app/lib/data/api/http_itinerary_api.dart` の `_receiveTimeout` を延ばすか、API ごとに個別に設定することを検討してください。
 - **エラーの詳細がログに出ない**：外部サービス・Firestore のエラーは、すべて `502 UPSTREAM_ERROR` として返り、原因はログに残りません（`server/internal/service/upstream.go`、`http.go` の `APIError`）。本番で原因を追えるように、失敗したときに外部サービスのステータスコードとエラーをログに出す改善をおすすめします。
+- **電車・バスはほぼ使われない**：Routes API は日本の公共交通をほとんど返さないため、国内の20分を超える区間は車（タクシー表示）になります。タクシー料金・渋滞は反映しません。電車の時刻表にもとづく経路が必要になったら、国内の経路検索サービス（mixway など）を別途つなぐ必要があります。
+- **Routes の呼び出しは1区間3回**：徒歩・車・公共交通を並行して呼ぶので、待ち時間は1回分ですが、Routes API の料金は3回分かかります。
 - **CI はアプリ（`app/**`）だけ**：Go サーバーのテストは CI で動いていないので、サーバーを変えたら公開前に手元で `go test ./...` を実行してください。
 - **費用**：Places / Routes / Gemini は呼び出しごとに課金されます。Cloud Billing の予算アラートと、Cloud Run の `--max-instances` を設定しておくことをおすすめします。実際の遅延・課金額はまだ測っていません。
 - **`main` ブランチ**：まだ `back` を取り込んでいません（完成するまで見送り）。`main` には「`back` をマージしてから取り消した」コミット（`30af13d`）があるため、取り込むときは先に `git revert 30af13d` を実行してから `back` をマージしてください。そうしないと、サーバーのコードの大部分が消えたままになります。
