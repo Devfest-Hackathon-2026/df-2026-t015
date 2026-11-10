@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/create-alt/gen-TLE/server/internal/service"
 )
@@ -122,18 +121,8 @@ func (flowTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			place["regularOpeningHours"] = map[string]any{"periods": []any{map[string]any{"open": map[string]int{"day": 6, "hour": 10}, "close": map[string]int{"day": 6, "hour": 21}}}}
 		}
 		data = place
-	case strings.Contains(r.URL.Path, "/toolbox/course/condition"):
-		data = map[string]any{"ResultSet": map[string]string{"Condition": "rail-bus-walk"}}
-	case strings.Contains(r.URL.Path, "/search/course/extreme"):
-		depart, err := time.ParseInLocation("200601021504", r.URL.Query().Get("date")+r.URL.Query().Get("time"), service.JST)
-		if err != nil {
-			return nil, err
-		}
-		data = map[string]any{"ResultSet": map[string]any{"Course": []any{map[string]any{"Route": map[string]any{"Line": []any{map[string]any{
-			"Type": "train", "Name": "鉄道",
-			"DepartureState": map[string]any{"Datetime": map[string]string{"text": depart.Format(time.RFC3339), "operation": "today"}},
-			"ArrivalState":   map[string]any{"Datetime": map[string]string{"text": depart.Add(10 * time.Minute).Format(time.RFC3339), "operation": "today"}},
-		}}}}}}}
+	case strings.Contains(r.URL.Path, "computeRoutes"):
+		data = map[string]any{"routes": []any{map[string]string{"duration": "600s"}}}
 	case strings.Contains(r.URL.Path, "generateContent"):
 		var request struct {
 			Config struct {
@@ -184,7 +173,7 @@ func (flowTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 func TestAPIFlow(t *testing.T) {
 	store := &flowStore{}
 	client := &http.Client{Transport: flowTransport{}}
-	app := &service.App{Store: store, Verify: func(context.Context, string) (string, error) { return "owner", nil }, Maps: &service.Maps{HTTP: client, Transit: &service.Transit{Key: "test", HTTP: client}}, AI: &service.Gemini{HTTP: client, Model: "test"}}
+	app := &service.App{Store: store, Verify: func(context.Context, string) (string, error) { return "owner", nil }, Maps: &service.Maps{HTTP: client}, AI: &service.Gemini{HTTP: client, Model: "test"}}
 	handler := New(app)
 	call := func(method, path, body, version string, status int, output any) {
 		t.Helper()

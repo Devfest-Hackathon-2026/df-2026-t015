@@ -26,21 +26,25 @@ Go 1.26以上。API仕様（MVP、2026-11-06改訂版、F-01〜F-11）の #1〜#
 
 - Firebase Authenticationで匿名ログインを有効化する。
 - Firestoreのデータベースを作り、サーバーの実行アカウントに必要な読み書き権限を付与する。
-- Mapsの課金を設定し、Places API (New) を有効化する。#12 は Places API の Nearby Search（名前で絞るときは Text Search）、#13 は Place Details を使います。
+- Mapsの課金を設定し、Places API (New) と Routes API を有効化する。#12 は Places API の Nearby Search（名前で絞るときは Text Search）、#13 は Place Details を使います。
 - Gemini APIキーと、そのプロジェクトで利用できるモデル名を用意する。
-- 国内の経路検索用に[mixwayの利用手引き](https://docs-mixway.ekispert.jp/usage-guide/)に従ってアクセスキーを用意し、`MIXWAY_API_KEY` に設定する。Googleのキー・ADCとは別の認証です。
 
-`MIXWAY_API_KEY` が未設定でも施設検索は利用できますが、経路が必要な操作は503 `TRANSIT_UNAVAILABLE` になります（同一地点の0分移動を除く）。経路なしは422 `ROUTE_NOT_FOUND`、通信・認証・不正応答は502 `UPSTREAM_ERROR`、上流の呼び出し制限は429 `RATE_LIMITED` を返します。mixwayにはGoogleの認証トークンを送信しません。
+経路は Google の Routes API だけで求めます（追加の外部サービスやキーは不要）。区間ごとに徒歩・車・公共交通を並行して問い合わせ、次の順に選びます。
 
-時刻表の収録期間・利用できる交通事業者はmixwayの提供データと契約によります。料金・リアルタイム遅延は取得しません。実キーがない環境ではHTTPモックで検証し、実際の東京〜大阪の便・未来日の収録範囲・契約条件は確認できません。キー発行申込・課金設定・公開環境への反映は別途必要です。
+1. 徒歩が20分以内なら徒歩（`walk`）
+2. 公共交通の結果が返れば公共交通（鉄道を含めば `train`、バスだけなら `bus`。路線名つき）
+3. 車の結果があれば車（`taxi`。アプリでは「タクシー」と表示）
+4. 車もなければ徒歩
+
+Routes API は日本の公共交通をほとんど返さない（[対応国](https://developers.google.com/maps/faq#transit_directions_countries)）ため、国内では長い区間はほぼ車になります。公共交通の呼び出しの失敗は無視します。経路なしは422 `ROUTE_NOT_FOUND`、通信・認証・不正応答は502 `UPSTREAM_ERROR`、上流の呼び出し制限は429 `RATE_LIMITED` です。料金・渋滞・リアルタイム遅延は反映しません。Routes の呼び出しは1区間あたり3回（同じ区間・出発時刻は1リクエストの中でキャッシュ）です。
 
 ### API キーを使わない場合（ADC）
 
 組織のポリシーで API キーを作れない場合は、`GEMINI_API_KEY` と `GOOGLE_MAPS_API_KEY` を空にします。起動時のログに、それぞれどちらで呼ぶかが出ます。
 
 - Gemini：Vertex AI（`aiplatform.googleapis.com`）を ADC のトークンで呼びます。リージョンは `GOOGLE_CLOUD_LOCATION`（既定は `global`）で、課金先は `FIREBASE_PROJECT_ID` のプロジェクトです。
-- Maps：Places API (New) を ADC のトークンで呼び、`X-Goog-User-Project` に同じプロジェクトを付けます。
-- 準備：`gcloud services enable aiplatform.googleapis.com places.googleapis.com` で API を有効にします。サーバーを動かすアカウント（自分のアカウントかサービスアカウント）には、「Vertex AI ユーザー」と「Service Usage ユーザー」のロールが必要です。
+- Maps：Places API (New) と Routes API を ADC のトークンで呼び、`X-Goog-User-Project` に同じプロジェクトを付けます。
+- 準備：`gcloud services enable aiplatform.googleapis.com places.googleapis.com routes.googleapis.com` で API を有効にします。サーバーを動かすアカウント（自分のアカウントかサービスアカウント）には、「Vertex AI ユーザー」と「Service Usage ユーザー」のロールが必要です。
 - 自分のアカウントの ADC を使う場合は、`gcloud auth application-default login` のあとに `gcloud auth application-default set-quota-project <プロジェクトID>` を実行してください。
 
 Firebase/Firestoreは公式Admin SDKとApplication Default Credentialsを使用します。ローカルでは `GOOGLE_APPLICATION_CREDENTIALS` に認証JSONの絶対パスを指定するか、ADCを設定してください。Cloud Runでは実行サービスアカウントを使用できます。
@@ -84,11 +88,11 @@ Go の API サーバーは Cloud Run で動かし、Flutter の Web 版は Fireb
 gcloud run deploy iterinerary-api --source server --region asia-northeast1 \
   --service-account <サービスアカウント> --allow-unauthenticated \
   --set-env-vars FIREBASE_PROJECT_ID=<プロジェクトID>,GEMINI_MODEL=<モデル名>,API_BASE_PATH=/api \
-  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GOOGLE_MAPS_API_KEY=maps-api-key:latest,MIXWAY_API_KEY=mixway-api-key:latest
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GOOGLE_MAPS_API_KEY=maps-api-key:latest
 ```
 
 - `--allow-unauthenticated` は、Hosting から転送されたリクエストを Cloud Run が受け付けるために必要です。利用者の確認は、サーバーが Firebase の ID トークンで行います。
-- ADC で動かす場合も `MIXWAY_API_KEY` は必要です。Google用のキーだけ `--set-secrets` から外します（キーがなければ、サービスアカウントの権限で Vertex AI と Places を呼びます）。
+- ADC で動かす場合は、`--set-secrets` を外します（キーがなければ、サービスアカウントの権限で Vertex AI と Places / Routes を呼びます）。
 - Firebase Hosting から Cloud Run への転送は、60 秒で打ち切られます。
 
 4. アプリをビルドして、Hosting・Firestore のルール・インデックスを反映します（リポジトリ直下で実行）。
@@ -118,7 +122,7 @@ AI（Gemini）の使い方は「サーバーが事実を計算し、AIは選択�
 | #6 編集 | 固定の予定・今の順番・変更点（追加・削除・優先度の変更）を見て、残りの順番を返す | 基準の順番は「変更のない施設は今の順番のまま、追加分を最小コストの位置に挿入」。部分的な変更にとどめる |
 | #7 組み直し | 近くの代替施設も使った案を最大3つ返す（`label` つき） | AI なしの案（順番そのままで時刻をずらす、優先度の低い予定を1つ外す）も作り、すべて返す（AI の案は最大3案、アルゴリズムの案と合わせて最大5案）。各案に `source`（algorithm / ai）と `label` をつける。結果が同じ案はまとめる。AI が失敗してもアルゴリズムの案は返す |
 | #8 理由文 | サーバーが取り出した事実（時刻のずれ、延びた滞在、外れた理由、警告）を、要約 `text` と変更ごとの `reasons` にする | 理由の itemId は案の changes に限定し、種類（replace など）はサーバーの値を使う |
-| #10 空き時間 | 前後の移動を除いた「滞在に使える時間」を見て施設を選び、滞在時間と理由をつける。施設を決めない過ごし方 `ideas` も返す | Nearby Search の候補ごとに前後の移動時間を mixway で求め、使える時間が15分未満の候補と営業時間外の候補を先に除く。AI の滞在時間は使える時間に収める |
+| #10 空き時間 | 前後の移動を除いた「滞在に使える時間」を見て施設を選び、滞在時間と理由をつける。施設を決めない過ごし方 `ideas` も返す | Nearby Search の候補ごとに前後の移動時間を Routes で求め、使える時間が15分未満の候補と営業時間外の候補を先に除く。AI の滞在時間は使える時間に収める |
 
 
 `If-Match` は取得時の `ETag` の値を送ってください。更新時はFirestoreトランザクションで所有者とversionを確認します。別の利用者の旅程・案は404、古いversionは409、期限切れの案は410です。認証済み利用者ごとに1分120リクエストまで受け付けます。
@@ -145,7 +149,7 @@ AI（Gemini）の使い方は「サーバーが事実を計算し、AIは選択�
 - `PUT /itineraries/:id/places` は `date`・`start`・`end` を省略すると今の値のままです。`date` を変えると、完了済み・滞在中の予定も含めて旅程全体を作り直します。同じ日のまま旅程の開始後に出発地・出発時刻を変えることはできません（400）。完了済み・滞在中の予定は、遅延で延びた滞在時間（480分を超えることがあります）のまま送り直せます。
 - Mapsの通常営業時間に基づいて検証します。営業時間が取得できない施設は `openingHours: null`、不明な料金は `amount: null, kind: unknown` とします。祝日などの臨時営業や入場料金の自動取得は含めていません。
 - 料金合計は金額が分かる予定だけを合計し、不明・目安を含む場合は `hasEstimate: true` とします。移動料金の取得は含めていません。
-- 移動はmixwayが返す電車・バス・徒歩の経路から、実際の到着日時が早いものを選びます。乗車待ち・乗り換え・降車後の徒歩も含みます。公共交通の失敗時に徒歩へ切り替えません。タクシー・飛行機・船・シェアサイクル・オンデマンド交通を含む結果は利用しません。
+- 移動は Routes API の徒歩・公共交通・車から選びます（選び方は「接続先の準備」を参照）。公共交通は乗車までの待ち時間を含め、最後の降車時刻までを所要時間にします。
 - 空き時間の提案は既存予定と重ならず、次の予定（最後の予定の後なら終わる場所）への移動も時間内に収まる候補だけを返します。最初の予定より前に追加する場合、`insertAfterItemId` は `start` を指定します。省略すると最後の予定の後ろに追加します。
 - 遅延時の `now` は現在の予定の終了予定時刻との差から遅延を計算します。完了済みの予定と現在の予定を保持し、これからの予定だけを組み直します。
 - 待ち時間で吸収できる遅延や最後の予定の遅延も、現在の終了時刻を保存するため時刻調整だけの案を返します。確定APIを呼ぶまでは元の旅程は変更しません。終わる場所に `end.arriveBy` までに着けなくなる場合は `end_at_risk` を警告します。
@@ -162,6 +166,6 @@ go vet ./...
 go build -o /tmp/iterinerary-api ./cmd/server
 ```
 
-通常のテストでは認証・保存先・Places/mixway/GeminiのHTTP応答を差し替えるため、有料サービスへアクセスしません。実接続には有効な設定とFirebase IDトークンが必要です。`FIRESTORE_EMULATOR_HOST` が設定されている場合は、`demo-iterinerary` プロジェクトのエミュレーター内で保存・同時更新・理由文の処理権・案の確定も検証します。
+通常のテストでは認証・保存先・Places/Routes/GeminiのHTTP応答を差し替えるため、有料サービスへアクセスしません。実接続には有効な設定とFirebase IDトークンが必要です。`FIRESTORE_EMULATOR_HOST` が設定されている場合は、`demo-iterinerary` プロジェクトのエミュレーター内で保存・同時更新・理由文の処理権・案の確定も検証します。
 
-接続仕様の参照: [Firebase IDトークンの検証](https://firebase.google.com/docs/auth/admin/verify-id-tokens)、[Places Autocomplete](https://developers.google.com/maps/documentation/places/web-service/place-autocomplete)、[mixway API](https://docs-mixway.ekispert.jp/api/)、[Geminiの構造化出力](https://ai.google.dev/gemini-api/docs/structured-output)。
+接続仕様の参照: [Firebase IDトークンの検証](https://firebase.google.com/docs/auth/admin/verify-id-tokens)、[Places Autocomplete](https://developers.google.com/maps/documentation/places/web-service/place-autocomplete)、[Routes](https://developers.google.com/maps/documentation/routes/compute_route_directions)、[Geminiの構造化出力](https://ai.google.dev/gemini-api/docs/structured-output)。

@@ -5,16 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
 )
 
-// Maps は Google Places と国内経路検索の呼び出し先。Places は Key があれば API キーで、
+// Maps は Google の Places API (New) と Routes API の呼び出し先。Key があれば API キーで、
 // なければ ADC のトークン（HTTP に付けるクライアントを渡す）と課金先の Project で呼ぶ。
 type Maps struct {
 	Key     string
 	HTTP    *http.Client
 	Project string
-	Transit *Transit
 }
 
 func (m *Maps) mode() string {
@@ -182,22 +180,4 @@ func (m *Maps) location(ctx context.Context, waypoint Waypoint) (Point, error) {
 	}
 	place, err := m.Details(ctx, waypoint.PlaceID)
 	return place.Location, err
-}
-
-func (m *Maps) Route(ctx context.Context, from, to Waypoint, depart time.Time) (Leg, error) {
-	if from.Key() == to.Key() {
-		return Leg{Mode: "walk", DepartAt: depart.Format(time.RFC3339), ArriveAt: depart.Format(time.RFC3339)}, nil
-	}
-	if m.Transit == nil || m.Transit.Key == "" {
-		return Leg{}, Fail(503, "TRANSIT_UNAVAILABLE", "公共交通の接続設定がありません。サーバーに MIXWAY_API_KEY を設定してください")
-	}
-	origin, err := m.location(ctx, from)
-	if err != nil {
-		return Leg{}, err
-	}
-	destination, err := m.location(ctx, to)
-	if err != nil {
-		return Leg{}, err
-	}
-	return m.Transit.Route(ctx, origin, destination, depart)
 }

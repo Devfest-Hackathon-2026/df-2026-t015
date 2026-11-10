@@ -68,7 +68,7 @@ func TestStrictClockFormat(t *testing.T) {
 }
 
 func TestBuildKeepsMustBeforeOptional(t *testing.T) {
-	app := App{Maps: &Maps{HTTP: placesHTTP(), Transit: &Transit{Key: "test", HTTP: transitHTTP(10)}}}
+	app := App{Maps: &Maps{HTTP: routesHTTP(placesHTTP(), 10)}}
 	// 移動は各10分。出発地 → must（60分）→ 終わる場所で 10:20 に着く。
 	input := PlanInput{Title: "旅", Date: "2026-11-14", Start: Start{PlaceID: ref("start"), DepartAt: "09:00"}, End: End{PlaceID: ref("end"), Name: "駅", ArriveBy: "10:20"}}
 	visits := []Visit{{PlaceID: "optional", Priority: "optional", StayMin: 60}, {PlaceID: "must", Priority: "must", StayMin: 60}}

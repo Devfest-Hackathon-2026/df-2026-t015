@@ -14,7 +14,7 @@ import (
 func TestOvernightCreateAndCopy(t *testing.T) {
 	store := &flowStore{}
 	client := &http.Client{Transport: flowTransport{}}
-	app := &service.App{Store: store, Verify: func(context.Context, string) (string, error) { return "owner", nil }, Maps: &service.Maps{HTTP: client, Transit: &service.Transit{Key: "test", HTTP: client}}}
+	app := &service.App{Store: store, Verify: func(context.Context, string) (string, error) { return "owner", nil }, Maps: &service.Maps{HTTP: client}}
 	handler := New(app)
 	call := func(path, body string) service.Itinerary {
 		t.Helper()
