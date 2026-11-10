@@ -364,7 +364,8 @@ class _LegRow extends StatelessWidget {
         tokens.space12 -
         lineInset -
         tokens.legLineWidth;
-    final text = leg.mode == TransitMode.walk
+    // 徒歩・タクシーは時刻表がないので、出発時刻は出さない
+    final text = leg.mode == TransitMode.walk || leg.mode == TransitMode.taxi
         ? '${leg.mode.label} ${Format.duration(leg.durationMin)}'
         : '${leg.mode.label} ${Format.duration(leg.durationMin)}・${Format.dateTime(leg.departAt)}${AppStrings.departSuffix}';
 

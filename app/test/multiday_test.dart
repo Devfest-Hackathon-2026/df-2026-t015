@@ -43,14 +43,19 @@ void main() {
     );
   });
 
-  test('新しい公共交通エラーを識別して説明を保持する', () {
-    for (final code in ['TRANSIT_UNAVAILABLE', 'ROUTE_NOT_FOUND']) {
-      final error = ApiException.fromResponse(503, {
-        'error': {'code': code, 'message': '公共交通の経路を取得できません'},
-      });
-      expect(error.code.value, code);
-      expect(error.message, '公共交通の経路を取得できません');
-    }
+  test('経路なしのエラーを識別して説明を保持する', () {
+    final error = ApiException.fromResponse(422, {
+      'error': {'code': 'ROUTE_NOT_FOUND', 'message': '指定した地点の間の経路が見つかりません'},
+    });
+    expect(error.code, ApiErrorCode.routeNotFound);
+    expect(error.message, '指定した地点の間の経路が見つかりません');
+  });
+
+  test('廃止した TRANSIT_UNAVAILABLE は不明なコードとして扱う', () {
+    final error = ApiException.fromResponse(503, {
+      'error': {'code': 'TRANSIT_UNAVAILABLE', 'message': ''},
+    });
+    expect(error.code, ApiErrorCode.unknown);
   });
 
   test('2日目の旅程は実際の終了日まで今日に含める', () {

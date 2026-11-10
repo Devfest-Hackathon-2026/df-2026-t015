@@ -14,7 +14,6 @@ enum ApiErrorCode {
   itineraryLimit('ITINERARY_LIMIT'),
   rateLimited('RATE_LIMITED'),
   upstreamError('UPSTREAM_ERROR'),
-  transitUnavailable('TRANSIT_UNAVAILABLE'),
   routeNotFound('ROUTE_NOT_FOUND'),
 
   /// 通信できなかった、または仕様にないコードが返った
