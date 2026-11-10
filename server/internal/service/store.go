@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -63,6 +64,7 @@ func storeError(err error) error {
 	case codes.ResourceExhausted:
 		return Fail(429, "RATE_LIMITED", "呼び出し上限に達しました")
 	default:
+		log.Printf("firestore: %v", err)
 		return Upstream()
 	}
 }

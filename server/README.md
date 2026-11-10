@@ -29,6 +29,24 @@ Go 1.26以上。API仕様（MVP、2026-11-06改訂版、F-01〜F-11）の #1〜#
 - Mapsの課金を設定し、Places API (New) と Routes API を有効化する。#12 は Places API の Nearby Search（名前で絞るときは Text Search）、#13 は Place Details を使います。
 - Gemini APIキーと、そのプロジェクトで利用できるモデル名を用意する。
 
+経路は Google の Routes API だけで求めます（追加の外部サービスやキーは不要）。区間ごとに徒歩・車・公共交通を並行して問い合わせ、次の順に選びます。
+
+1. 徒歩が20分以内なら徒歩（`walk`）
+2. 公共交通の結果が返れば公共交通（鉄道を含めば `train`、バスだけなら `bus`。路線名つき）
+3. 車の結果があれば車（`taxi`。アプリでは「タクシー」と表示）
+4. 車もなければ徒歩
+
+Routes API は日本の公共交通をほとんど返さない（[対応国](https://developers.google.com/maps/faq#transit_directions_countries)）ため、国内では長い区間はほぼ車になります。公共交通の呼び出しの失敗は無視します。経路なしは422 `ROUTE_NOT_FOUND`、通信・認証・不正応答は502 `UPSTREAM_ERROR`、上流の呼び出し制限は429 `RATE_LIMITED` です。料金・渋滞・リアルタイム遅延は反映しません。Routes の呼び出しは1区間あたり3回（同じ区間・出発時刻は1リクエストの中でキャッシュ）です。
+
+### API キーを使わない場合（ADC）
+
+組織のポリシーで API キーを作れない場合は、`GEMINI_API_KEY` と `GOOGLE_MAPS_API_KEY` を空にします。起動時のログに、それぞれどちらで呼ぶかが出ます。
+
+- Gemini：Vertex AI（`aiplatform.googleapis.com`）を ADC のトークンで呼びます。リージョンは `GOOGLE_CLOUD_LOCATION`（既定は `global`）で、課金先は `FIREBASE_PROJECT_ID` のプロジェクトです。
+- Maps：Places API (New) と Routes API を ADC のトークンで呼び、`X-Goog-User-Project` に同じプロジェクトを付けます。
+- 準備：`gcloud services enable aiplatform.googleapis.com places.googleapis.com routes.googleapis.com` で API を有効にします。サーバーを動かすアカウント（自分のアカウントかサービスアカウント）には、「Vertex AI ユーザー」と「Service Usage ユーザー」のロールが必要です。
+- 自分のアカウントの ADC を使う場合は、`gcloud auth application-default login` のあとに `gcloud auth application-default set-quota-project <プロジェクトID>` を実行してください。
+
 Firebase/Firestoreは公式Admin SDKとApplication Default Credentialsを使用します。ローカルでは `GOOGLE_APPLICATION_CREDENTIALS` に認証JSONの絶対パスを指定するか、ADCを設定してください。Cloud Runでは実行サービスアカウントを使用できます。
 
 ## 起動
@@ -38,13 +56,10 @@ Firebase/Firestoreは公式Admin SDKとApplication Default Credentialsを使用�
 ```sh
 cp .env.example .env
 # .env を実際の値に編集してから実行する
-set -a
-. ./.env
-set +a
 go run ./cmd/server
 ```
 
-`.env` は起動プログラムが自動で読み込むものではなく、上記のシェルで環境変数として読み込みます。認証JSONやAPIキーをGitへ追加しないでください。
+起動時にカレントディレクトリの `.env` を自動で読み込みます（ファイルが無ければスキップ）。シェルや Cloud Run で既に設定されている環境変数が優先され、`.env` の値で上書きされることはありません。`.env` は LF の改行で保存してください（値の前後の空白や CR はサーバー側でも取り除きます）。認証JSONやAPIキーをGitへ追加しないでください。
 
 ```sh
 curl http://localhost:8080/healthz
@@ -53,6 +68,44 @@ curl -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
 ```
 
 `FIREBASE_ID_TOKEN` はクライアントのFirebase匿名ログイン後に取得したIDトークンです。APIキーやAdmin SDK用の認証JSONではありません。`/healthz` 以外は認証必須です。
+
+## 公開（Cloud Run と Firebase Hosting）
+
+事前準備・動作確認・切り戻しを含めた詳しい手順は [docs/deploy.md](../docs/deploy.md) にまとめています。
+
+Go の API サーバーは Cloud Run で動かし、Flutter の Web 版は Firebase Hosting で配信します。リポジトリ直下の `firebase.json` で、Hosting の `/api/**` を Cloud Run のサービス `iterinerary-api`（asia-northeast1）に転送します。アプリと API が同じドメインになるので、CORS は要りません。
+
+```
+ブラウザ ─ https://<プロジェクト>.web.app/          → Firebase Hosting（app/build/web）
+        └ https://<プロジェクト>.web.app/api/...   → Cloud Run（server/、API_BASE_PATH=/api で /api を外して処理）
+```
+
+1. Cloud Run が使うサービスアカウントを作り、ロールを付けます。Firestore 用の「Cloud Datastore ユーザー」が必要です。API キーを使わない場合（ADC）は、「Vertex AI ユーザー」と「Service Usage ユーザー」も付けます。
+2. API キーを使う場合は、Secret Manager に入れます（`gcloud secrets create gemini-api-key --data-file=-` など）。サービスアカウントには「Secret Manager のシークレット アクセサー」を付けます。
+3. `server/Dockerfile` でイメージを作り、デプロイします。
+
+```sh
+gcloud run deploy iterinerary-api --source server --region asia-northeast1 \
+  --service-account <サービスアカウント> --allow-unauthenticated \
+  --set-env-vars FIREBASE_PROJECT_ID=<プロジェクトID>,GEMINI_MODEL=<モデル名>,API_BASE_PATH=/api \
+  --set-secrets GEMINI_API_KEY=gemini-api-key:latest,GOOGLE_MAPS_API_KEY=maps-api-key:latest
+```
+
+- `--allow-unauthenticated` は、Hosting から転送されたリクエストを Cloud Run が受け付けるために必要です。利用者の確認は、サーバーが Firebase の ID トークンで行います。
+- ADC で動かす場合は、`--set-secrets` を外します（キーがなければ、サービスアカウントの権限で Vertex AI と Places / Routes を呼びます）。
+- Firebase Hosting から Cloud Run への転送は、60 秒で打ち切られます。
+
+4. アプリをビルドして、Hosting・Firestore のルール・インデックスを反映します（リポジトリ直下で実行）。
+
+```sh
+cd app
+flutterfire configure --project=<プロジェクトID>
+flutter build web --release --dart-define=USE_MOCK_API=false --dart-define=API_BASE_URL=https://<プロジェクトID>.web.app/api
+cd ..
+firebase deploy --only hosting,firestore
+```
+
+Hosting を通さず、ほかのオリジン（`flutter run -d chrome` の開発用サーバーなど）から直接呼ぶ場合は、`CORS_ALLOWED_ORIGINS` に許可するオリジンをカンマ区切りで指定します（例：`http://localhost:*`、`https://<プロジェクトID>.web.app`）。
 
 ## 実装の構成
 
@@ -78,7 +131,7 @@ AI（Gemini）の使い方は「サーバーが事実を計算し、AIは選択�
 
 使用するコレクションは `itineraries`、`replans`、`rateLimits` です。いずれもサーバーからのみアクセスします。`firestore.rules` はクライアントの直接アクセスを拒否する設定例です。Admin SDKのアクセスにはIAM権限が別途必要です。
 
-`firestore.indexes.json` は旅程本体・案本体を検索インデックスから除外し、3コレクションの `expiresAt` をTTL対象にする設定例です。旅程は旅行日から30日、案は15分、レート制限カウンターは2分で期限を設定します。クラウド側への設定反映は別途必要です。この実装では設定のデプロイは行いません。
+`firestore.indexes.json` は旅程本体・案本体を検索インデックスから除外し、3コレクションの `expiresAt` をTTL対象にする設定例です。旅程は終了日から30日、案は15分、レート制限カウンターは2分で期限を設定します。クラウド側への設定反映は別途必要です。この実装では設定のデプロイは行いません。
 
 一覧（`GET /me/itineraries`）は `ownerUid` の等価検索と `date` の降順で `limit` 件ずつ取得するため、`firestore.indexes.json` の複合インデックス（ownerUid ↑, date ↓, __name__ ↓）が必要です。続きは応答の `nextCursor` を `cursor` に送って取得します。TTLの実削除は遅れるため、API側でも有効期限を検証し、期限切れの旅程は一覧から除きます（そのため1ページの件数が `limit` より少ないことがあります）。
 
@@ -86,7 +139,7 @@ AI（Gemini）の使い方は「サーバーが事実を計算し、AIは選択�
 
 ## 最初の実装での扱い
 
-- 日本時間・同日内の旅程を扱います。訪問順の最適解を保証するソルバーは含めていません。
+- 日本時間の旅程を扱い、`end.date`（YYYY-MM-DD）で終了日を指定できます。省略時は開始日と同じ日です。宿泊時間は自動で追加しません。訪問順の最適解を保証するソルバーは含めていません。
 - 出発地（`start`）と終わる場所（`end`）は `placeId`、または地図で選んだ地点の `location` と `name` で指定します。終わる場所への移動も最後の Leg（`toItemId: "end"`）として計算し、終わりの判定は終わる場所に着く時刻（`end.arriveAt`、`summary.endAt`）で行います。
 - 必須の予定が入りきらない場合は422 `MUST_ITEMS_INFEASIBLE`、行き先をすべて外しても終わる場所に `end.arriveBy` までに着けない場合は422 `END_INFEASIBLE` です。
 - `GET /places/:placeId` の営業時間は、`date` が今日から7日以内なら Places の `currentOpeningHours`（臨時営業・臨時休業を含む）、それ以降は通常営業時間で判定します。`currentOpeningHours.periods` が空配列なら臨時休業として `null` を返します。営業区間は「その日に重なるか」で判定し、前日から続く深夜営業は `opensAt: "00:00"` として含めます。区間が複数ある日は、その日の最初に開いている時刻と最後に閉まる時刻を返します。料金は Places の `priceRange`（円）がある施設だけ `kind: estimate` で返します。
@@ -96,7 +149,7 @@ AI（Gemini）の使い方は「サーバーが事実を計算し、AIは選択�
 - `PUT /itineraries/:id/places` は `date`・`start`・`end` を省略すると今の値のままです。`date` を変えると、完了済み・滞在中の予定も含めて旅程全体を作り直します。同じ日のまま旅程の開始後に出発地・出発時刻を変えることはできません（400）。完了済み・滞在中の予定は、遅延で延びた滞在時間（480分を超えることがあります）のまま送り直せます。
 - Mapsの通常営業時間に基づいて検証します。営業時間が取得できない施設は `openingHours: null`、不明な料金は `amount: null, kind: unknown` とします。祝日などの臨時営業や入場料金の自動取得は含めていません。
 - 料金合計は金額が分かる予定だけを合計し、不明・目安を含む場合は `hasEstimate: true` とします。移動料金の取得は含めていません。
-- 移動はMapsの徒歩と公共交通のうち短い経路を使います。公共交通の検索可能期間（過去7日〜未来100日）の外では徒歩のみを使います。タクシーの自動選択は含めていません。
+- 移動は Routes API の徒歩・公共交通・車から選びます（選び方は「接続先の準備」を参照）。公共交通は乗車までの待ち時間を含め、最後の降車時刻までを所要時間にします。
 - 空き時間の提案は既存予定と重ならず、次の予定（最後の予定の後なら終わる場所）への移動も時間内に収まる候補だけを返します。最初の予定より前に追加する場合、`insertAfterItemId` は `start` を指定します。省略すると最後の予定の後ろに追加します。
 - 遅延時の `now` は現在の予定の終了予定時刻との差から遅延を計算します。完了済みの予定と現在の予定を保持し、これからの予定だけを組み直します。
 - 待ち時間で吸収できる遅延や最後の予定の遅延も、現在の終了時刻を保存するため時刻調整だけの案を返します。確定APIを呼ぶまでは元の旅程は変更しません。終わる場所に `end.arriveBy` までに着けなくなる場合は `end_at_risk` を警告します。
@@ -113,6 +166,23 @@ go vet ./...
 go build -o /tmp/iterinerary-api ./cmd/server
 ```
 
-通常のテストでは認証・保存先・Maps/GeminiのHTTP応答を差し替えるため、有料サービスへアクセスしません。実接続には有効な設定とFirebase IDトークンが必要です。`FIRESTORE_EMULATOR_HOST` が設定されている場合は、`demo-iterinerary` プロジェクトのエミュレーター内で保存・同時更新・理由文の処理権・案の確定も検証します。
+通常のテストでは認証・保存先・Places/Routes/GeminiのHTTP応答を差し替えるため、有料サービスへアクセスしません。実接続には有効な設定とFirebase IDトークンが必要です。`FIRESTORE_EMULATOR_HOST` が設定されている場合は、`demo-iterinerary` プロジェクトのエミュレーター内で保存・同時更新・理由文の処理権・案の確定も検証します。
+
+### ライブテスト（本物の外部サービスに接続）
+
+```sh
+GENTLE_LIVE_TEST=1 go test ./api -run TestLiveAPI -v
+```
+
+```powershell
+$env:GENTLE_LIVE_TEST = "1"; go test ./api -run TestLiveAPI -v -count=1
+```
+
+`api/live_test.go` は Firebase Auth・Firestore・Google Maps・Gemini に実際に接続し、匿名ログイン → 施設検索（autocomplete・詳細・周辺・interpret）→ 旅程の作成・取得・一覧・名前の変更・削除を順に確認します。`GENTLE_LIVE_TEST=1` のときだけ動き、通常の `go test ./...` では SKIP します。外部サービスの料金がかかります。
+
+- `.env` に通常の設定に加えて `FIREBASE_WEB_API_KEY`（Firebase コンソール → プロジェクトの設定 → ウェブ API キー）が必要です。
+- Authentication で「匿名」ログインを有効にしてください。
+- 一覧の確認には `firestore.indexes.json` の複合インデックスが必要です。
+- 作った旅程と匿名ユーザーはテストの最後に削除します。
 
 接続仕様の参照: [Firebase IDトークンの検証](https://firebase.google.com/docs/auth/admin/verify-id-tokens)、[Places Autocomplete](https://developers.google.com/maps/documentation/places/web-service/place-autocomplete)、[Routes](https://developers.google.com/maps/documentation/routes/transit-route)、[Geminiの構造化出力](https://ai.google.dev/gemini-api/docs/structured-output)。

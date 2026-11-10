@@ -10,12 +10,47 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"time"
 )
 
+// geminiTimeout は Gemini の応答を待つ上限。生成には 10 秒以上かかることがあるため、
+// 認証ミドルウェアの 60 秒・サーバーの WriteTimeout 70 秒より短い範囲で長めにとる。
+const geminiTimeout = 45 * time.Second
+
+// Gemini は Gemini の呼び出し先。Key があれば Gemini API（generativelanguage）を API キーで、
+// なければ Vertex AI を ADC で呼ぶ（HTTP に ADC のトークンを付けるクライアントを渡す）。
 type Gemini struct {
 	Key   string
 	Model string
 	HTTP  *http.Client
+	// Project と Location は Vertex AI を使うときの課金先プロジェクトとリージョン（既定は global）。
+	Project  string
+	Location string
+}
+
+func (g *Gemini) mode() string {
+	if g.Key != "" {
+		return "Gemini API（API キー）"
+	}
+	return "Vertex AI（ADC、" + g.Project + " / " + g.Location + "）"
+}
+
+// endpoint は generateContent の URL と認証用のヘッダーを返す。
+func (g *Gemini) endpoint() (string, map[string]string) {
+	model := url.PathEscape(g.Model)
+	if g.Key != "" {
+		return "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent", map[string]string{"x-goog-api-key": g.Key}
+	}
+	host := "aiplatform.googleapis.com"
+	if g.Location != "" && g.Location != "global" {
+		host = url.PathEscape(g.Location) + "-aiplatform.googleapis.com"
+	}
+	location := g.Location
+	if location == "" {
+		location = "global"
+	}
+	return "https://" + host + "/v1/projects/" + url.PathEscape(g.Project) + "/locations/" + url.PathEscape(location) + "/publishers/google/models/" + model + ":generateContent",
+		map[string]string{"X-Goog-User-Project": g.Project}
 }
 
 func ObjectSchema(properties map[string]any) map[string]any {
@@ -103,7 +138,8 @@ func (g *Gemini) generate(ctx context.Context, prompt string, temperature float6
 			FinishReason string `json:"finishReason"`
 		} `json:"candidates"`
 	}
-	err := Request(ctx, g.HTTP, "POST", "https://generativelanguage.googleapis.com/v1beta/models/"+url.PathEscape(g.Model)+":generateContent", map[string]string{"x-goog-api-key": g.Key}, input, &response)
+	endpoint, headers := g.endpoint()
+	err := RequestWithin(ctx, geminiTimeout, g.HTTP, "POST", endpoint, headers, input, &response)
 	if err != nil {
 		return err
 	}

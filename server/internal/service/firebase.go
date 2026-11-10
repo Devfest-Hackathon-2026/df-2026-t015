@@ -3,20 +3,49 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
-	"time"
+	"strings"
 
 	firebase "firebase.google.com/go/v4"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
+// env は環境変数を前後の空白・改行（CRLF の \r を含む）を除いて読む。
+func env(name string) string { return strings.TrimSpace(os.Getenv(name)) }
+
+// cloudScope は ADC で Vertex AI・Places・Routes を呼ぶときのスコープ。
+const cloudScope = "https://www.googleapis.com/auth/cloud-platform"
+
+// Port は待ち受けるポート（既定 8080）。
+func Port() string {
+	if port := env("PORT"); port != "" {
+		return port
+	}
+	return "8080"
+}
+
+// cleanLibraryEnv は、Google のライブラリが直接読む環境変数から前後の空白と CR を取り除く
+// （CRLF で保存された .env を読み込むと、ファイルパスなどの末尾に \r が付くため）。
+func cleanLibraryEnv() {
+	for _, name := range []string{"GOOGLE_APPLICATION_CREDENTIALS", "FIRESTORE_EMULATOR_HOST", "GOOGLE_CLOUD_PROJECT"} {
+		if value, ok := os.LookupEnv(name); ok && value != strings.TrimSpace(value) {
+			os.Setenv(name, strings.TrimSpace(value))
+		}
+	}
+}
+
 func Connect(ctx context.Context) (*App, func() error, error) {
-	for _, key := range []string{"FIREBASE_PROJECT_ID", "GOOGLE_MAPS_API_KEY", "GEMINI_API_KEY", "GEMINI_MODEL"} {
-		if os.Getenv(key) == "" {
+	cleanLibraryEnv()
+	for _, key := range []string{"FIREBASE_PROJECT_ID", "GEMINI_MODEL"} {
+		if env(key) == "" {
 			return nil, nil, fmt.Errorf("%s を設定してください", key)
 		}
 	}
-	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: os.Getenv("FIREBASE_PROJECT_ID")})
+	project := env("FIREBASE_PROJECT_ID")
+	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: project})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -28,7 +57,33 @@ func Connect(ctx context.Context) (*App, func() error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
+	// 応答までの上限は Request が context で決めるので、Client.Timeout は付けない
+	// （oauth2.Transport と併用すると非推奨の CancelRequest が呼ばれて警告が出る）。
+	client := &http.Client{}
+	mapsKey, geminiKey := env("GOOGLE_MAPS_API_KEY"), env("GEMINI_API_KEY")
+	mapsClient, aiClient := client, client
+	// API キーがない（組織のポリシーで作れないなど）ときは、ADC のトークンで呼ぶ。
+	if mapsKey == "" || geminiKey == "" {
+		credentials, err := google.FindDefaultCredentials(ctx, cloudScope)
+		if err != nil {
+			db.Close()
+			return nil, nil, fmt.Errorf("API キーがない場合は ADC が必要です（gcloud auth application-default login）: %w", err)
+		}
+		authed := &http.Client{Transport: &oauth2.Transport{Source: credentials.TokenSource, Base: http.DefaultTransport}}
+		if mapsKey == "" {
+			mapsClient = authed
+		}
+		if geminiKey == "" {
+			aiClient = authed
+		}
+	}
+	location := env("GOOGLE_CLOUD_LOCATION")
+	if location == "" {
+		location = "global"
+	}
+	ai := &Gemini{Key: geminiKey, Model: env("GEMINI_MODEL"), HTTP: aiClient, Project: project, Location: location}
+	maps := &Maps{Key: mapsKey, HTTP: mapsClient, Project: project}
+	log.Printf("Gemini: %s / Maps: %s", ai.mode(), maps.mode())
 	return &App{
 		Verify: func(ctx context.Context, token string) (string, error) {
 			decoded, err := auth.VerifyIDToken(ctx, token)
@@ -38,7 +93,7 @@ func Connect(ctx context.Context) (*App, func() error, error) {
 			return decoded.UID, nil
 		},
 		Store: &FirestoreStore{Client: db},
-		Maps:  &Maps{Key: os.Getenv("GOOGLE_MAPS_API_KEY"), HTTP: client},
-		AI:    &Gemini{Key: os.Getenv("GEMINI_API_KEY"), Model: os.Getenv("GEMINI_MODEL"), HTTP: client},
+		Maps:  maps,
+		AI:    ai,
 	}, db.Close, nil
 }

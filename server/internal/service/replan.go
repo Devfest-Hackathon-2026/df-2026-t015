@@ -46,8 +46,8 @@ func DelayedPrefix(trip Itinerary, input ReplanInput) ([]Item, time.Time, error)
 		delay = *input.DelayMin
 	} else {
 		now, _ := time.Parse(time.RFC3339, input.Now)
-		if now.In(JST).Format("2006-01-02") != trip.Date {
-			return nil, time.Time{}, Invalid("now は旅行日の日時を指定してください")
+		if now.In(JST).Format("2006-01-02") < trip.Date {
+			return nil, time.Time{}, Invalid("now は出発日以降の日時を指定してください")
 		}
 		delay = int(math.Max(0, math.Ceil(now.Sub(end).Minutes())))
 		if delay > 600 {
@@ -55,9 +55,6 @@ func DelayedPrefix(trip Itinerary, input ReplanInput) ([]Item, time.Time, error)
 		}
 	}
 	end = end.Add(time.Duration(delay) * time.Minute)
-	if end.In(JST).Format("2006-01-02") != trip.Date {
-		return nil, time.Time{}, Invalid("遅延後の時刻が旅行日を超えています")
-	}
 	prefix := append([]Item{}, trip.Items[:index+1]...)
 	for i := range prefix {
 		prefix[i].Status = "done"
@@ -107,19 +104,6 @@ func Changes(old, next Itinerary) []Change {
 	return changes
 }
 
-// shiftLegFrom は itemID から出る移動を depart 出発に合わせてずらす（遅延で出発が遅れた場合）。
-func shiftLegFrom(legs []Leg, itemID string, depart time.Time) []Leg {
-	shifted := append([]Leg{}, legs...)
-	for i, leg := range shifted {
-		if leg.FromItemID != itemID {
-			continue
-		}
-		shifted[i].DepartAt = depart.Format(time.RFC3339)
-		shifted[i].ArriveAt = depart.Add(time.Duration(leg.DurationMin) * time.Minute).Format(time.RFC3339)
-	}
-	return shifted
-}
-
 func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Replan, error) {
 	empty := Replan{Warnings: []Warning{}, Options: []Option{}}
 	prefix, depart, err := DelayedPrefix(trip, input)
@@ -136,21 +120,33 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 		Warnings:  []Warning{}, Options: []Option{},
 		Explanation: Explanation{Status: "pending"}, Explanations: map[string]Explanation{},
 	}
-	retimeOnly := index+1 == len(trip.Items)
-	travel := 0
-	for _, leg := range trip.Legs {
-		if !retimeOnly && leg.ToItemID == trip.Items[index+1].ItemID {
-			travel = leg.DurationMin
-		}
+	destination := trip.End.Waypoint()
+	toID := "end"
+	if index+1 < len(trip.Items) {
+		destination = Waypoint{PlaceID: trip.Items[index+1].PlaceID}
+		toID = trip.Items[index+1].ItemID
 	}
-	if !retimeOnly {
-		nextStart, err := time.Parse(time.RFC3339, trip.Items[index+1].StartAt)
+	leg, err := a.Maps.Route(ctx, Waypoint{PlaceID: prefix[index].PlaceID}, destination, depart)
+	if err != nil && (errorCode(err) != "ROUTE_NOT_FOUND" || index+1 == len(trip.Items)) {
+		return empty, err
+	}
+	retimeOnly := false
+	if err == nil {
+		leg.FromItemID, leg.ToItemID = prefix[index].ItemID, toID
+		arrival, err := time.Parse(time.RFC3339, leg.ArriveAt)
 		if err != nil {
 			return empty, Upstream()
 		}
-		retimeOnly = !depart.Add(time.Duration(travel) * time.Minute).After(nextStart)
+		retimeOnly = index+1 == len(trip.Items)
+		if !retimeOnly {
+			nextStart, err := time.Parse(time.RFC3339, trip.Items[index+1].StartAt)
+			if err != nil {
+				return empty, Upstream()
+			}
+			retimeOnly = !arrival.After(nextStart)
+		}
 	}
-	arriveBy, err := At(trip.Date, trip.End.ArriveBy)
+	arriveBy, err := At(endDate(trip.Date, trip.End), trip.End.ArriveBy)
 	if err != nil {
 		return empty, Upstream()
 	}
@@ -165,7 +161,19 @@ func (a *App) Replan(ctx context.Context, trip Itinerary, input ReplanInput) (Re
 	if retimeOnly {
 		candidate := trip
 		candidate.Items = append(prefix, trip.Items[index+1:]...)
-		candidate.Legs = shiftLegFrom(trip.Legs, prefix[index].ItemID, depart)
+		candidate.End.Date = endDate(trip.Date, trip.End)
+		candidate.Legs = append([]Leg{}, trip.Legs...)
+		replaced := false
+		for i := range candidate.Legs {
+			if candidate.Legs[i].ToItemID == toID {
+				candidate.Legs[i] = leg
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			candidate.Legs = append(candidate.Legs, leg)
+		}
 		if last := candidate.Legs; len(last) > 0 && last[len(last)-1].ToItemID == "end" {
 			candidate.End.ArriveAt = last[len(last)-1].ArriveAt
 		}
@@ -364,7 +372,7 @@ func (a *App) aiReplanProposals(ctx context.Context, trip Itinerary, prefix, fut
 			"current":      map[string]any{"name": current.Name, "delayedEndAt": depart.Format(time.RFC3339)},
 			"remaining":    remaining,
 			"alternatives": facts,
-			"end":          map[string]string{"name": trip.End.Name, "arriveBy": trip.End.ArriveBy},
+			"end":          map[string]string{"name": trip.End.Name, "date": endDate(trip.Date, trip.End), "arriveBy": trip.End.ArriveBy},
 		},
 		Temperature: 0.4,
 	}
