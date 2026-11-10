@@ -97,6 +97,7 @@ abstract final class AppStrings {
   static const planNamedSeparator = '・';
 
   // 3.2 今日の旅程
+  static const todayBackToList = '旅程一覧に戻る';
   static const todayMoveTotal = '移動の合計';
   static const todayPriceTotal = '料金の目安';
   static const todayEndAt = '終わる時刻';

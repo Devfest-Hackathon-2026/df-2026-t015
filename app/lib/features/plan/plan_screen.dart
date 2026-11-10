@@ -604,18 +604,11 @@ class _DateAndTitle extends StatelessWidget {
             spacing: tokens.space4,
             children: [
               Text(AppStrings.planTitleLabel, style: labelStyle),
-              SizedBox(
+              SizedTextField(
                 height: tokens.inputHeight,
-                child: TextField(
-                  controller: titleController,
-                  maxLength: ApiConstraints.titleMaxLength,
-                  textInputAction: TextInputAction.done,
-                  style: context.texts.bodyLarge,
-                  decoration: const InputDecoration(
-                    hintText: AppStrings.planTitleHint,
-                    counterText: '',
-                  ),
-                ),
+                controller: titleController,
+                maxLength: ApiConstraints.titleMaxLength,
+                hintText: AppStrings.planTitleHint,
               ),
             ],
           ),
@@ -826,19 +819,13 @@ class _AddPlaceField extends StatelessWidget {
       spacing: tokens.space8,
       children: [
         Expanded(
-          child: SizedBox(
+          child: SizedTextField(
             height: tokens.inputHeight,
-            child: TextField(
-              controller: controller,
-              maxLength: ApiConstraints.interpretTextMaxLength,
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) => onSubmit(),
-              style: context.texts.bodyLarge,
-              decoration: const InputDecoration(
-                hintText: AppStrings.planAddHint,
-                counterText: '',
-              ),
-            ),
+            controller: controller,
+            maxLength: ApiConstraints.interpretTextMaxLength,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => onSubmit(),
+            hintText: AppStrings.planAddHint,
           ),
         ),
         _OutlinedField(

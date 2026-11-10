@@ -9,6 +9,7 @@ import '../../constants/app_strings.dart';
 import '../../data/models/models.dart';
 import '../../data/providers.dart';
 import '../../theme.dart';
+import '../../widgets/common.dart';
 
 /// 入力が止まってから補完を取りに行くまでの時間
 const _autocompleteDebounce = Duration(milliseconds: 300);
@@ -77,15 +78,13 @@ class PlaceSearchSheet extends HookConsumerWidget {
         spacing: tokens.space12,
         children: [
           Text(title, style: context.texts.titleLarge),
-          SizedBox(
+          SizedTextField(
             height: tokens.inputHeight,
-            child: TextField(
-              controller: controller,
-              autofocus: true,
-              maxLength: ApiConstraints.autocompleteQueryMaxLength,
-              decoration: InputDecoration(hintText: hint, counterText: ''),
-              style: context.texts.bodyLarge,
-            ),
+            controller: controller,
+            autofocus: true,
+            maxLength: ApiConstraints.autocompleteQueryMaxLength,
+            textInputAction: TextInputAction.search,
+            hintText: hint,
           ),
           Flexible(
             child: SingleChildScrollView(

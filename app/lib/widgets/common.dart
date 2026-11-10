@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../constants/app_strings.dart';
 import '../data/api/api_exception.dart';
@@ -39,6 +40,53 @@ class PrimaryButton extends StatelessWidget {
             ],
           );
     return FilledButton(onPressed: loading ? null : onPressed, child: child);
+  }
+}
+
+/// 高さを [height] にそろえた 1 行の入力欄。
+///
+/// TextField は SizedBox で囲むだけでは枠が文字の高さまでしか伸びず、
+/// 隣のボタンより低くなる。expands で枠を高さいっぱいに広げ、文字は縦中央に置く。
+/// expands には maxLines: null が要るので、改行は入力させない。
+class SizedTextField extends StatelessWidget {
+  const SizedTextField({
+    super.key,
+    required this.height,
+    required this.controller,
+    required this.hintText,
+    this.maxLength,
+    this.textInputAction = TextInputAction.done,
+    this.onSubmitted,
+    this.autofocus = false,
+  });
+
+  final double height;
+  final TextEditingController controller;
+  final String hintText;
+  final int? maxLength;
+  final TextInputAction textInputAction;
+  final ValueChanged<String>? onSubmitted;
+  final bool autofocus;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: TextField(
+        controller: controller,
+        autofocus: autofocus,
+        maxLength: maxLength,
+        expands: true,
+        maxLines: null,
+        keyboardType: TextInputType.text,
+        textInputAction: textInputAction,
+        textAlignVertical: TextAlignVertical.center,
+        inputFormatters: [FilteringTextInputFormatter.singleLineFormatter],
+        onSubmitted: onSubmitted,
+        style: context.texts.bodyLarge,
+        decoration: InputDecoration(hintText: hintText, counterText: ''),
+      ),
+    );
   }
 }
 

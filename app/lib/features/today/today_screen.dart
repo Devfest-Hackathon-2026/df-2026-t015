@@ -43,19 +43,40 @@ class TodayScreen extends HookConsumerWidget {
     final itinerary = ref.watch(itineraryProvider(itineraryId));
     final notifier = ref.read(itineraryProvider(itineraryId).notifier);
 
+    // 一覧から push されていれば戻る。go で直接開いたときは一覧を開き直す
+    void backToList() {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go(Routes.itineraries);
+      }
+    }
+
     return Scaffold(
       body: SafeArea(
-        child: switch (itinerary) {
-          AsyncValue(:final value?) => _TodayBody(
-            itinerary: value,
-            onRefresh: notifier.reload,
-          ),
-          AsyncError(:final error) => ErrorView(
-            error: error,
-            onRetry: notifier.reload,
-          ),
-          _ => const LoadingView(),
-        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            BackTopBar(
+              title: AppStrings.listTitle,
+              backLabel: AppStrings.todayBackToList,
+              onBack: backToList,
+            ),
+            Expanded(
+              child: switch (itinerary) {
+                AsyncValue(:final value?) => _TodayBody(
+                  itinerary: value,
+                  onRefresh: notifier.reload,
+                ),
+                AsyncError(:final error) => ErrorView(
+                  error: error,
+                  onRetry: notifier.reload,
+                ),
+                _ => const LoadingView(),
+              },
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: itinerary.hasValue
           ? _BottomActions(
@@ -88,7 +109,7 @@ class _TodayBody extends HookWidget {
       child: ListView(
         padding: EdgeInsets.fromLTRB(
           tokens.screenPadding,
-          tokens.space28,
+          tokens.space8,
           tokens.screenPadding,
           tokens.space16,
         ),
