@@ -35,8 +35,9 @@ func (a *App) suffix(ctx context.Context, old Itinerary, prefix []Item, depart t
 	}
 	start.DepartAt = depart.In(JST).Format("15:04")
 	end := old.End
+	end.Date = endDate(old.Date, end)
 	end.ArriveAt = ""
-	input := PlanInput{Title: old.Title, Date: old.Date, Start: start, End: end, Places: visits}
+	input := PlanInput{Title: old.Title, Date: depart.In(JST).Format("2006-01-02"), Start: start, End: end, Places: visits}
 	// 終わる場所が placeId だけで渡された（編集で変えた）ときは、施設情報から名前と座標を入れる。
 	var endID *string
 	if end.PlaceID != nil && (end.Name == "" || end.Location == nil) {
@@ -45,6 +46,11 @@ func (a *App) suffix(ctx context.Context, old Itinerary, prefix []Item, depart t
 	places, err := a.Places(ctx, visits, start.PlaceID, endID)
 	if err != nil {
 		return Itinerary{}, err
+	}
+	if start.PlaceID != nil {
+		place := places[*start.PlaceID]
+		location := place.Location
+		input.Start.Name, input.Start.Location = place.Name, &location
 	}
 	if endID != nil {
 		place := places[*endID]
@@ -97,6 +103,7 @@ func joinPrefix(old Itinerary, prefix []Item, next Itinerary, start Start) Itine
 	next.ID = old.ID
 	next.Version = old.Version
 	next.Title = old.Title
+	next.Date = old.Date
 	next.Start = start
 	if next.ExpiresAt == "" {
 		next.ExpiresAt = old.ExpiresAt
@@ -142,7 +149,10 @@ func (a *App) Edit(ctx context.Context, old Itinerary, input EditInput) (Itinera
 	if input.Start != nil {
 		start = *input.Start
 	}
-	end := old.End
+	end, err := shiftEnd(old.Date, date, old.End)
+	if err != nil {
+		return Itinerary{}, err
+	}
 	end.ArriveAt = ""
 	if input.End != nil {
 		end = *input.End
@@ -223,11 +233,12 @@ func (a *App) Edit(ctx context.Context, old Itinerary, input EditInput) (Itinera
 	if err != nil {
 		return Itinerary{}, Upstream()
 	}
+	end.Date = endDate(date, end)
 	old.End = end
 	if len(remaining) == 0 {
 		return a.suffix(ctx, old, old.Items[:count], depart, nil, false)
 	}
-	plan := PlanInput{Title: old.Title, Date: date, Start: Start{PlaceID: placeRef(last.PlaceID), Name: last.Name, DepartAt: depart.In(JST).Format("15:04")}, End: end, Places: remaining}
+	plan := PlanInput{Title: old.Title, Date: depart.In(JST).Format("2006-01-02"), Start: Start{PlaceID: placeRef(last.PlaceID), Name: last.Name, DepartAt: depart.In(JST).Format("15:04")}, End: end, Places: remaining}
 	next, err := a.replanPart(ctx, plan, old.Items[count:], old.Items[:count])
 	if err != nil {
 		return Itinerary{}, err
@@ -323,18 +334,6 @@ func (a *App) Add(ctx context.Context, old Itinerary, input AddInput) (Itinerary
 	return a.suffix(ctx, old, old.Items[:index+1], depart, visits, false)
 }
 
-// locate は地点の座標を返す。施設なら Places Details で取得する。
-func (a *App) locate(ctx context.Context, point Waypoint) (Point, error) {
-	if point.PlaceID == "" {
-		return point.Location, nil
-	}
-	place, err := a.Maps.Details(ctx, point.PlaceID)
-	if err != nil {
-		return Point{}, err
-	}
-	return place.Location, nil
-}
-
 type Suggestion struct {
 	Place             Place  `json:"place"`
 	TypeLabel         string `json:"typeLabel,omitempty"`
@@ -389,8 +388,8 @@ type gapCandidate struct {
 //  4. 選ばれた候補を実際の時刻で検証し、次の予定に間に合うものだけ返す。
 func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, after string) (SuggestResult, error) {
 	empty := SuggestResult{Suggestions: []Suggestion{}, Ideas: []Idea{}}
-	if from.In(JST).Format("2006-01-02") != trip.Date || to.In(JST).Format("2006-01-02") != trip.Date || !to.After(from) {
-		return empty, Invalid("旅程と同日の空き時間を指定してください")
+	if !to.After(from) {
+		return empty, Invalid("空き時間の終了日時は開始日時より後を指定してください")
 	}
 	index := -1
 	for i, item := range trip.Items {
@@ -426,7 +425,7 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 	// 次の予定がなければ、終わる場所に着きたい時刻までが空き時間になる。
 	next := trip.End.Waypoint()
 	nextName := trip.End.Name
-	latest, err := At(trip.Date, trip.End.ArriveBy)
+	latest, err := At(endDate(trip.Date, trip.End), trip.End.ArriveBy)
 	if err != nil {
 		return empty, Upstream()
 	}
@@ -441,10 +440,16 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 	if from.Before(earliest) || to.After(latest) {
 		return empty, Invalid("指定した時間帯は空き時間ではありません")
 	}
-	origin, err := a.locate(ctx, previous)
+	origin, err := a.Maps.location(ctx, previous)
 	if err != nil {
 		return empty, err
 	}
+	previous.Location, previous.HasLocation = origin, true
+	destination, err := a.Maps.location(ctx, next)
+	if err != nil {
+		return empty, err
+	}
+	next.Location, next.HasLocation = destination, true
 	window := int(to.Sub(from).Minutes())
 	candidates, err := a.gapCandidates(ctx, trip, previous, next, origin, from, to)
 	if err != nil {
@@ -542,7 +547,7 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 		if err != nil {
 			return empty, Upstream()
 		}
-		start, _, ok := OpenAt(c.Place.Hours, arrival, stay)
+		start, _, ok := OpenAtUntil(c.Place.Hours, arrival, stay, to)
 		if !ok {
 			continue
 		}
@@ -550,8 +555,11 @@ func (a *App) Suggest(ctx context.Context, trip Itinerary, from, to time.Time, a
 		var onward Leg
 		fits := false
 		for range 2 {
-			onward, err = a.Maps.Route(ctx, Waypoint{PlaceID: c.Place.PlaceID}, next, start.Add(time.Duration(stay)*time.Minute))
+			onward, err = a.Maps.Route(ctx, Waypoint{PlaceID: c.Place.PlaceID, Location: c.Place.Location, HasLocation: true}, next, start.Add(time.Duration(stay)*time.Minute))
 			if err != nil {
+				if errorCode(err) == "ROUTE_NOT_FOUND" {
+					break
+				}
 				return empty, err
 			}
 			reach, err := time.Parse(time.RFC3339, onward.ArriveAt)
@@ -615,31 +623,36 @@ func (a *App) gapCandidates(ctx context.Context, trip Itinerary, previous, next 
 	if len(options) > 8 {
 		options = options[:8]
 	}
-	day, _ := time.ParseInLocation("2006-01-02", trip.Date, JST)
 	candidates := []gapCandidate{}
 	for _, value := range options {
-		in, err := a.Maps.Route(ctx, previous, Waypoint{PlaceID: value.Place.PlaceID}, from)
+		in, err := a.Maps.Route(ctx, previous, Waypoint{PlaceID: value.Place.PlaceID, Location: value.Place.Location, HasLocation: true}, from)
 		if err != nil {
+			if errorCode(err) == "ROUTE_NOT_FOUND" {
+				continue
+			}
 			return nil, err
 		}
 		arrival, err := time.Parse(time.RFC3339, in.ArriveAt)
 		if err != nil {
 			return nil, Upstream()
 		}
-		start, _, ok := OpenAt(value.Place.Hours, arrival, minimumStay)
+		start, _, ok := OpenAtUntil(value.Place.Hours, arrival, minimumStay, to)
 		if !ok {
 			continue
 		}
 		// 次への移動は、着いて最短の滞在をしたあとに出発する時刻で調べる（公共交通は出発時刻で待ち時間が変わるため）。
-		out, err := a.Maps.Route(ctx, Waypoint{PlaceID: value.Place.PlaceID}, next, start.Add(minimumStay*time.Minute))
+		out, err := a.Maps.Route(ctx, Waypoint{PlaceID: value.Place.PlaceID, Location: value.Place.Location, HasLocation: true}, next, start.Add(minimumStay*time.Minute))
 		if err != nil {
+			if errorCode(err) == "ROUTE_NOT_FOUND" {
+				continue
+			}
 			return nil, err
 		}
 		available := int(to.Sub(start).Minutes()) - out.DurationMin
 		if available < minimumStay {
 			continue
 		}
-		candidates = append(candidates, gapCandidate{Place: value.Place, TypeLabel: value.TypeLabel, In: in, Out: out, AvailableMin: available, Hours: DayHours(nil, value.Place.Hours, day)})
+		candidates = append(candidates, gapCandidate{Place: value.Place, TypeLabel: value.TypeLabel, In: in, Out: out, AvailableMin: available, Hours: DayHours(nil, value.Place.Hours, start.In(JST))})
 	}
 	return candidates, nil
 }
@@ -651,6 +664,23 @@ func ValidateTitle(title string) error {
 		return Invalid("title は1〜100文字で指定してください")
 	}
 	return nil
+}
+
+func shiftEnd(oldDate, date string, end End) (End, error) {
+	oldStart, err := At(oldDate, "00:00")
+	if err != nil {
+		return End{}, Upstream()
+	}
+	oldEnd, err := At(endDate(oldDate, end), "00:00")
+	if err != nil {
+		return End{}, Upstream()
+	}
+	start, err := At(date, "00:00")
+	if err != nil {
+		return End{}, Invalid("date が不正です")
+	}
+	end.Date = start.Add(oldEnd.Sub(oldStart)).Format("2006-01-02")
+	return end, nil
 }
 
 // Copy は旅程を date の日にコピーする（F-11）。行き先・優先度・滞在時間・出発と終わりを引き継ぎ、
@@ -668,7 +698,10 @@ func (a *App) Copy(ctx context.Context, old Itinerary, date, title string) (Itin
 	}
 	start := old.Start
 	start.DepartAt = departAt
-	end := old.End
+	end, err := shiftEnd(old.Date, date, old.End)
+	if err != nil {
+		return Itinerary{}, err
+	}
 	end.ArriveAt = ""
 	visits := []Visit{}
 	for _, item := range old.Items {

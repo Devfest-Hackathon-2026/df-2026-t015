@@ -15,6 +15,12 @@ abstract final class Format {
   /// 12:50
   static String time(DateTime dateTime) => _time.format(dateTime.toLocal());
 
+  static String dateTime(DateTime value, {String? date}) {
+    final local = value.toLocal();
+    if (date != null && isoDate(local) == date) return time(value);
+    return '${monthDay(isoDate(local))} ${time(value)}';
+  }
+
   /// 3,800円
   static String yen(int amount) =>
       '${_yen.format(amount)}${AppStrings.yenUnit}';

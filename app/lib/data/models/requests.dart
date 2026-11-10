@@ -66,6 +66,7 @@ abstract class EndInput with _$EndInput {
     String? placeId,
     LatLng? location,
     String? name,
+    String? date,
 
     /// 終わる場所に着きたい時刻（HH:mm）。終わる場所への移動も含めて判定される
     required String arriveBy,
@@ -74,8 +75,13 @@ abstract class EndInput with _$EndInput {
   /// 今の旅程の終わる場所を、時刻だけ変えて送り直す
   factory EndInput.fromEndpoint(ItineraryEnd end, {required String arriveBy}) =>
       end.placeId != null
-      ? EndInput(placeId: end.placeId, arriveBy: arriveBy)
-      : EndInput(location: end.location, name: end.name, arriveBy: arriveBy);
+      ? EndInput(placeId: end.placeId, date: end.date, arriveBy: arriveBy)
+      : EndInput(
+          location: end.location,
+          name: end.name,
+          date: end.date,
+          arriveBy: arriveBy,
+        );
 
   factory EndInput.fromJson(Map<String, dynamic> json) =>
       _$EndInputFromJson(json);

@@ -189,7 +189,7 @@ class _ListBody extends StatelessWidget {
           if (groups.today.isNotEmpty)
             _Section(
               title:
-                  '${AppStrings.listTodayPrefix}${Format.dateJa(groups.today.first.date)}',
+                  '${AppStrings.listTodayPrefix}${Format.dateJa(Format.isoDate(now))}',
               children: [
                 for (final e in groups.today)
                   _TodayCard(
@@ -239,7 +239,7 @@ class _ListBody extends StatelessWidget {
   /// みなと町駅 09:00 → 16:05・4か所
   static String _routeSummary(ItineraryListEntry e) =>
       '${e.start.name} ${Format.time(e.start.departAt)}'
-      '${AppStrings.listArrow}${Format.time(e.end.arriveAt)}'
+      '${AppStrings.listArrow}${Format.dateTime(e.end.arriveAt, date: e.date)}'
       '${AppStrings.listPlaceSeparator}${e.placeCount}${AppStrings.listPlaceCountSuffix}';
 
   /// あと9日（翌日は「明日」）
@@ -377,7 +377,7 @@ class _TodayCard extends ConsumerWidget {
                     Text(
                       '${Format.time(entry.start.departAt)} ${entry.start.name}${AppStrings.listDepartSuffix}'
                       '${AppStrings.listArrow}'
-                      '${Format.time(entry.end.arriveAt)} ${entry.end.name}${AppStrings.listArriveSuffix}',
+                      '${Format.dateTime(entry.end.arriveAt, date: entry.date)} ${entry.end.name}${AppStrings.listArriveSuffix}',
                       style: texts.bodySmall?.copyWith(color: muted),
                     ),
                     if (places.isNotEmpty)

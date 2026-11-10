@@ -17,7 +17,7 @@ import (
 // env は環境変数を前後の空白・改行（CRLF の \r を含む）を除いて読む。
 func env(name string) string { return strings.TrimSpace(os.Getenv(name)) }
 
-// cloudScope は ADC で Vertex AI・Places・Routes を呼ぶときのスコープ。
+// cloudScope は ADC で Vertex AI・Places を呼ぶときのスコープ。
 const cloudScope = "https://www.googleapis.com/auth/cloud-platform"
 
 // Port は待ち受けるポート（既定 8080）。
@@ -81,7 +81,7 @@ func Connect(ctx context.Context) (*App, func() error, error) {
 		location = "global"
 	}
 	ai := &Gemini{Key: geminiKey, Model: env("GEMINI_MODEL"), HTTP: aiClient, Project: project, Location: location}
-	maps := &Maps{Key: mapsKey, HTTP: mapsClient, Project: project}
+	maps := &Maps{Key: mapsKey, HTTP: mapsClient, Project: project, Transit: &Transit{Key: env("MIXWAY_API_KEY"), HTTP: client}}
 	log.Printf("Gemini: %s / Maps: %s", ai.mode(), maps.mode())
 	return &App{
 		Verify: func(ctx context.Context, token string) (string, error) {
