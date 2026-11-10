@@ -47,13 +47,10 @@ Firebase/Firestoreは公式Admin SDKとApplication Default Credentialsを使用�
 ```sh
 cp .env.example .env
 # .env を実際の値に編集してから実行する
-set -a
-. ./.env
-set +a
 go run ./cmd/server
 ```
 
-`.env` は起動プログラムが自動で読み込むものではなく、上記のシェルで環境変数として読み込みます。`.env` は LF の改行で保存してください（値の前後の空白や CR はサーバー側でも取り除きます）。認証JSONやAPIキーをGitへ追加しないでください。
+起動時にカレントディレクトリの `.env` を自動で読み込みます（ファイルが無ければスキップ）。シェルや Cloud Run で既に設定されている環境変数が優先され、`.env` の値で上書きされることはありません。`.env` は LF の改行で保存してください（値の前後の空白や CR はサーバー側でも取り除きます）。認証JSONやAPIキーをGitへ追加しないでください。
 
 ```sh
 curl http://localhost:8080/healthz
@@ -64,6 +61,8 @@ curl -H "Authorization: Bearer $FIREBASE_ID_TOKEN" \
 `FIREBASE_ID_TOKEN` はクライアントのFirebase匿名ログイン後に取得したIDトークンです。APIキーやAdmin SDK用の認証JSONではありません。`/healthz` 以外は認証必須です。
 
 ## 公開（Cloud Run と Firebase Hosting）
+
+事前準備・動作確認・切り戻しを含めた詳しい手順は [docs/deploy.md](../docs/deploy.md) にまとめています。
 
 Go の API サーバーは Cloud Run で動かし、Flutter の Web 版は Firebase Hosting で配信します。リポジトリ直下の `firebase.json` で、Hosting の `/api/**` を Cloud Run のサービス `iterinerary-api`（asia-northeast1）に転送します。アプリと API が同じドメインになるので、CORS は要りません。
 
