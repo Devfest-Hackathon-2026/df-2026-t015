@@ -208,6 +208,15 @@ void main() {
     expect(request.toJson(), {'currentItemId': 'it_2', 'delayMin': 40});
   });
 
+  test('ReplanRequest の now はタイムゾーン付き（RFC3339）で送る', () {
+    // 端末のローカル時刻で作っても、サーバー（Go の time.RFC3339）が読める書式にする
+    final now = DateTime(2026, 11, 14, 12, 30);
+    final json = ReplanRequest(currentItemId: 'it_2', now: now).toJson();
+    final sent = json['now'] as String;
+    expect(sent, endsWith('Z'));
+    expect(DateTime.parse(sent).isAtSameMomentAs(now), isTrue);
+  });
+
   test('エラー応答を ApiException にする', () {
     final e = ApiException.fromResponse(422, {
       'error': {

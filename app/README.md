@@ -10,24 +10,27 @@ flutter pub get
 flutter run -d chrome            # モック API（サーバー・Firebase なし）で動く
 ```
 
-サーバーにつなぐとき:
+本番のサーバー（Firebase プロジェクト `test-gentle`）につなぐとき:
 
 ```sh
-flutterfire configure            # lib/firebase_options.dart を生成
-flutter run \
-  --dart-define=USE_MOCK_API=false \
-  --dart-define=API_BASE_URL=https://<Cloud Run の URL>
+flutter run -d chrome --dart-define-from-file=config/prod.json
 ```
 
-手元のサーバー（`server/`、`http://localhost:8080`）に Chrome からつなぐときは、サーバーを
-`CORS_ALLOWED_ORIGINS='http://localhost:*'` を付けて起動する。
+接続先は `config/` の JSON で切り替える。
+
+| ファイル | 接続先 |
+|---|---|
+| `config/prod.json` | 本番（`https://test-gentle.web.app/api`。Hosting から Cloud Run に転送） |
+| `config/local.json` | 手元のサーバー（`server/`、`http://localhost:8080`） |
+
+- `lib/firebase_options.dart` は `test-gentle` の Web アプリの設定。Android / iOS で動かすときは、Firebase にアプリを登録してから `flutterfire configure --project=test-gentle` で作り直す。
+- `flutter run -d chrome` は `http://localhost:<ポート>` から本番の API を呼ぶため、Cloud Run のサーバーに `CORS_ALLOWED_ORIGINS='http://localhost:*'` を付けておく。手元のサーバーにつなぐときも同じ設定で起動する。
+- サーバーに送る日時（遅延の `now`、空き時間の `from` / `to`）は、タイムゾーン付きの RFC3339 にする（`lib/data/models/json_converters.dart`）。
 
 公開（Firebase Hosting）用のビルド:
 
 ```sh
-flutter build web --release \
-  --dart-define=USE_MOCK_API=false \
-  --dart-define=API_BASE_URL=https://<プロジェクトID>.web.app/api
+flutter build web --release --dart-define-from-file=config/prod.json
 ```
 
 `/api/**` は Hosting から Cloud Run の API サーバーに転送される（リポジトリ直下の `firebase.json`、手順は `server/README.md`）。

@@ -107,15 +107,31 @@ _ReplanRequest _$ReplanRequestFromJson(Map<String, dynamic> json) =>
     _ReplanRequest(
       currentItemId: json['currentItemId'] as String?,
       delayMin: (json['delayMin'] as num?)?.toInt(),
-      now: json['now'] == null ? null : DateTime.parse(json['now'] as String),
+      now: _$JsonConverterFromJson<String, DateTime>(
+        json['now'],
+        const Rfc3339Converter().fromJson,
+      ),
     );
 
 Map<String, dynamic> _$ReplanRequestToJson(_ReplanRequest instance) =>
     <String, dynamic>{
       'currentItemId': ?instance.currentItemId,
       'delayMin': ?instance.delayMin,
-      'now': ?instance.now?.toIso8601String(),
+      'now': ?_$JsonConverterToJson<String, DateTime>(
+        instance.now,
+        const Rfc3339Converter().toJson,
+      ),
     };
+
+Value? _$JsonConverterFromJson<Json, Value>(
+  Object? json,
+  Value? Function(Json json) fromJson,
+) => json == null ? null : fromJson(json as Json);
+
+Json? _$JsonConverterToJson<Json, Value>(
+  Value? value,
+  Json? Function(Value value) toJson,
+) => value == null ? null : toJson(value);
 
 _AddItemRequest _$AddItemRequestFromJson(Map<String, dynamic> json) =>
     _AddItemRequest(

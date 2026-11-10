@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import 'itinerary.dart';
+import 'json_converters.dart';
 import 'place.dart';
 
 part 'requests.freezed.dart';
@@ -123,7 +124,9 @@ abstract class ReplanRequest with _$ReplanRequest {
   const factory ReplanRequest({
     String? currentItemId,
     int? delayMin,
-    DateTime? now,
+
+    /// 今の時刻。サーバーはタイムゾーン付きの RFC3339 で読む
+    @Rfc3339Converter() DateTime? now,
   }) = _ReplanRequest;
 
   factory ReplanRequest.fromJson(Map<String, dynamic> json) =>

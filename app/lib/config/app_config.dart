@@ -1,6 +1,6 @@
 /// ビルド時に `--dart-define` で切り替える設定。
 ///
-/// 例: `flutter run --dart-define=USE_MOCK_API=false --dart-define=API_BASE_URL=https://xxx.run.app`
+/// 本番: `flutter run --dart-define-from-file=config/prod.json`（`config/` に接続先ごとの値がある）
 class AppConfig {
   const AppConfig({required this.apiBaseUrl, required this.useMockApi});
 
@@ -16,7 +16,7 @@ class AppConfig {
   static const _useMockApiKey = 'USE_MOCK_API';
   static const _defaultApiBaseUrl = 'http://localhost:8080';
 
-  /// Go の API サーバーのベース URL。Firebase Hosting で公開するときは `https://<プロジェクト>.web.app/api`
+  /// Go の API サーバーのベース URL。本番は `https://test-gentle.web.app/api`
   final String apiBaseUrl;
 
   /// true のときはサーバーと Firebase を使わず、端末内のサンプルデータで動かす

@@ -1563,7 +1563,8 @@ $EndInputCopyWith<$Res>? get end {
 /// @nodoc
 mixin _$ReplanRequest {
 
- String? get currentItemId; int? get delayMin; DateTime? get now;
+ String? get currentItemId; int? get delayMin;/// 今の時刻。サーバーはタイムゾーン付きの RFC3339 で読む
+@Rfc3339Converter() DateTime? get now;
 /// Create a copy of ReplanRequest
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1601,7 +1602,7 @@ abstract mixin class $ReplanRequestCopyWith<$Res>  {
   factory $ReplanRequestCopyWith(ReplanRequest value, $Res Function(ReplanRequest) _then) = _$ReplanRequestCopyWithImpl;
 @useResult
 $Res call({
- String? currentItemId, int? delayMin, DateTime? now
+ String? currentItemId, int? delayMin,@Rfc3339Converter() DateTime? now
 });
 
 
@@ -1708,7 +1709,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? currentItemId,  int? delayMin,  DateTime? now)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? currentItemId,  int? delayMin, @Rfc3339Converter()  DateTime? now)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ReplanRequest() when $default != null:
 return $default(_that.currentItemId,_that.delayMin,_that.now);case _:
@@ -1729,7 +1730,7 @@ return $default(_that.currentItemId,_that.delayMin,_that.now);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? currentItemId,  int? delayMin,  DateTime? now)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? currentItemId,  int? delayMin, @Rfc3339Converter()  DateTime? now)  $default,) {final _that = this;
 switch (_that) {
 case _ReplanRequest():
 return $default(_that.currentItemId,_that.delayMin,_that.now);case _:
@@ -1749,7 +1750,7 @@ return $default(_that.currentItemId,_that.delayMin,_that.now);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? currentItemId,  int? delayMin,  DateTime? now)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? currentItemId,  int? delayMin, @Rfc3339Converter()  DateTime? now)?  $default,) {final _that = this;
 switch (_that) {
 case _ReplanRequest() when $default != null:
 return $default(_that.currentItemId,_that.delayMin,_that.now);case _:
@@ -1764,12 +1765,13 @@ return $default(_that.currentItemId,_that.delayMin,_that.now);case _:
 @JsonSerializable()
 
 class _ReplanRequest implements ReplanRequest {
-  const _ReplanRequest({this.currentItemId, this.delayMin, this.now}): assert((delayMin == null) != (now == null), 'delayMin か now のどちらか一方を指定する');
+  const _ReplanRequest({this.currentItemId, this.delayMin, @Rfc3339Converter() this.now}): assert((delayMin == null) != (now == null), 'delayMin か now のどちらか一方を指定する');
   factory _ReplanRequest.fromJson(Map<String, dynamic> json) => _$ReplanRequestFromJson(json);
 
 @override final  String? currentItemId;
 @override final  int? delayMin;
-@override final  DateTime? now;
+/// 今の時刻。サーバーはタイムゾーン付きの RFC3339 で読む
+@override@Rfc3339Converter() final  DateTime? now;
 
 /// Create a copy of ReplanRequest
 /// with the given fields replaced by the non-null parameter values.
@@ -1806,7 +1808,7 @@ abstract mixin class _$ReplanRequestCopyWith<$Res> implements $ReplanRequestCopy
   factory _$ReplanRequestCopyWith(_ReplanRequest value, $Res Function(_ReplanRequest) _then) = __$ReplanRequestCopyWithImpl;
 @override @useResult
 $Res call({
- String? currentItemId, int? delayMin, DateTime? now
+ String? currentItemId, int? delayMin,@Rfc3339Converter() DateTime? now
 });
 
 

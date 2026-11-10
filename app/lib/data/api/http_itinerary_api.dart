@@ -192,8 +192,8 @@ class HttpItineraryApi implements ItineraryApi {
       () => _dio.get(
         '/itineraries/$id/suggestions',
         queryParameters: {
-          'from': from.toIso8601String(),
-          'to': to.toIso8601String(),
+          'from': toRfc3339(from),
+          'to': toRfc3339(to),
           'afterItemId': ?afterItemId,
         },
       ),
