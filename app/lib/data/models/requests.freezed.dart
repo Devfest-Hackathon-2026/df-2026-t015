@@ -597,7 +597,7 @@ $LatLngCopyWith<$Res>? get location {
 /// @nodoc
 mixin _$EndInput {
 
- String? get placeId; LatLng? get location; String? get name;/// 終わる場所に着きたい時刻（HH:mm）。終わる場所への移動も含めて判定される
+ String? get placeId; LatLng? get location; String? get name; String? get date;/// 終わる場所に着きたい時刻（HH:mm）。終わる場所への移動も含めて判定される
  String get arriveBy;
 /// Create a copy of EndInput
 /// with the given fields replaced by the non-null parameter values.
@@ -612,20 +612,20 @@ $EndInputCopyWith<EndInput> get copyWith => _$EndInputCopyWithImpl<EndInput>(thi
 @override
 bool operator ==(Object other) {
   final _this = this as EndInput;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is EndInput&&(identical(other.placeId, _this.placeId) || other.placeId == _this.placeId)&&(identical(other.location, _this.location) || other.location == _this.location)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.arriveBy, _this.arriveBy) || other.arriveBy == _this.arriveBy));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is EndInput&&(identical(other.placeId, _this.placeId) || other.placeId == _this.placeId)&&(identical(other.location, _this.location) || other.location == _this.location)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.date, _this.date) || other.date == _this.date)&&(identical(other.arriveBy, _this.arriveBy) || other.arriveBy == _this.arriveBy));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as EndInput;
-  return Object.hash(runtimeType,_this.placeId,_this.location,_this.name,_this.arriveBy);
+  return Object.hash(runtimeType,_this.placeId,_this.location,_this.name,_this.date,_this.arriveBy);
 }
 
 @override
 String toString() {
   final _this = this as EndInput;
-  return 'EndInput(placeId: ${_this.placeId}, location: ${_this.location}, name: ${_this.name}, arriveBy: ${_this.arriveBy})';
+  return 'EndInput(placeId: ${_this.placeId}, location: ${_this.location}, name: ${_this.name}, date: ${_this.date}, arriveBy: ${_this.arriveBy})';
 }
 
 
@@ -636,7 +636,7 @@ abstract mixin class $EndInputCopyWith<$Res>  {
   factory $EndInputCopyWith(EndInput value, $Res Function(EndInput) _then) = _$EndInputCopyWithImpl;
 @useResult
 $Res call({
- String? placeId, LatLng? location, String? name, String arriveBy
+ String? placeId, LatLng? location, String? name, String? date, String arriveBy
 });
 
 
@@ -653,11 +653,12 @@ class _$EndInputCopyWithImpl<$Res>
 
 /// Create a copy of EndInput
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? placeId = freezed,Object? location = freezed,Object? name = freezed,Object? arriveBy = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? placeId = freezed,Object? location = freezed,Object? name = freezed,Object? date = freezed,Object? arriveBy = null,}) {
   return _then(EndInput(
 placeId: freezed == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
 as String?,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
 as LatLng?,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String?,date: freezed == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
 as String?,arriveBy: null == arriveBy ? _self.arriveBy : arriveBy // ignore: cast_nullable_to_non_nullable
 as String,
   ));
@@ -756,10 +757,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? placeId,  LatLng? location,  String? name,  String arriveBy)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String? placeId,  LatLng? location,  String? name,  String? date,  String arriveBy)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _EndInput() when $default != null:
-return $default(_that.placeId,_that.location,_that.name,_that.arriveBy);case _:
+return $default(_that.placeId,_that.location,_that.name,_that.date,_that.arriveBy);case _:
   return orElse();
 
 }
@@ -777,10 +778,10 @@ return $default(_that.placeId,_that.location,_that.name,_that.arriveBy);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? placeId,  LatLng? location,  String? name,  String arriveBy)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String? placeId,  LatLng? location,  String? name,  String? date,  String arriveBy)  $default,) {final _that = this;
 switch (_that) {
 case _EndInput():
-return $default(_that.placeId,_that.location,_that.name,_that.arriveBy);case _:
+return $default(_that.placeId,_that.location,_that.name,_that.date,_that.arriveBy);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -797,10 +798,10 @@ return $default(_that.placeId,_that.location,_that.name,_that.arriveBy);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? placeId,  LatLng? location,  String? name,  String arriveBy)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String? placeId,  LatLng? location,  String? name,  String? date,  String arriveBy)?  $default,) {final _that = this;
 switch (_that) {
 case _EndInput() when $default != null:
-return $default(_that.placeId,_that.location,_that.name,_that.arriveBy);case _:
+return $default(_that.placeId,_that.location,_that.name,_that.date,_that.arriveBy);case _:
   return null;
 
 }
@@ -812,12 +813,13 @@ return $default(_that.placeId,_that.location,_that.name,_that.arriveBy);case _:
 @JsonSerializable()
 
 class _EndInput implements EndInput {
-  const _EndInput({this.placeId, this.location, this.name, required this.arriveBy}): assert(placeId != null || (location != null && name != null), 'placeId か location と name のどちらかを指定する');
+  const _EndInput({this.placeId, this.location, this.name, this.date, required this.arriveBy}): assert(placeId != null || (location != null && name != null), 'placeId か location と name のどちらかを指定する');
   factory _EndInput.fromJson(Map<String, dynamic> json) => _$EndInputFromJson(json);
 
 @override final  String? placeId;
 @override final  LatLng? location;
 @override final  String? name;
+@override final  String? date;
 /// 終わる場所に着きたい時刻（HH:mm）。終わる場所への移動も含めて判定される
 @override final  String arriveBy;
 
@@ -834,18 +836,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _EndInput&&(identical(other.placeId, placeId) || other.placeId == placeId)&&(identical(other.location, location) || other.location == location)&&(identical(other.name, name) || other.name == name)&&(identical(other.arriveBy, arriveBy) || other.arriveBy == arriveBy));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _EndInput&&(identical(other.placeId, placeId) || other.placeId == placeId)&&(identical(other.location, location) || other.location == location)&&(identical(other.name, name) || other.name == name)&&(identical(other.date, date) || other.date == date)&&(identical(other.arriveBy, arriveBy) || other.arriveBy == arriveBy));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,placeId,location,name,arriveBy);
+    return Object.hash(runtimeType,placeId,location,name,date,arriveBy);
 }
 
 @override
 String toString() {
-    return 'EndInput(placeId: $placeId, location: $location, name: $name, arriveBy: $arriveBy)';
+    return 'EndInput(placeId: $placeId, location: $location, name: $name, date: $date, arriveBy: $arriveBy)';
 }
 
 
@@ -856,7 +858,7 @@ abstract mixin class _$EndInputCopyWith<$Res> implements $EndInputCopyWith<$Res>
   factory _$EndInputCopyWith(_EndInput value, $Res Function(_EndInput) _then) = __$EndInputCopyWithImpl;
 @override @useResult
 $Res call({
- String? placeId, LatLng? location, String? name, String arriveBy
+ String? placeId, LatLng? location, String? name, String? date, String arriveBy
 });
 
 
@@ -873,11 +875,12 @@ class __$EndInputCopyWithImpl<$Res>
 
 /// Create a copy of EndInput
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? placeId = freezed,Object? location = freezed,Object? name = freezed,Object? arriveBy = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? placeId = freezed,Object? location = freezed,Object? name = freezed,Object? date = freezed,Object? arriveBy = null,}) {
   return _then(_EndInput(
 placeId: freezed == placeId ? _self.placeId : placeId // ignore: cast_nullable_to_non_nullable
 as String?,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
 as LatLng?,name: freezed == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String?,date: freezed == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
 as String?,arriveBy: null == arriveBy ? _self.arriveBy : arriveBy // ignore: cast_nullable_to_non_nullable
 as String,
   ));

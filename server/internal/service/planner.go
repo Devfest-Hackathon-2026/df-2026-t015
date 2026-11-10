@@ -79,14 +79,21 @@ func ValidateStart(date string, start Start) (time.Time, error) {
 	return value, nil
 }
 
+func endDate(startDate string, end End) string {
+	if end.Date != "" {
+		return end.Date
+	}
+	return startDate
+}
+
 // ValidateEnd は終わる場所の指定と着きたい時刻（HH:mm）を確認する。
 func ValidateEnd(date string, end End) (time.Time, error) {
 	if err := validEndpoint(end.PlaceID, end.Location, end.Name, "end"); err != nil {
 		return time.Time{}, err
 	}
-	value, err := At(date, end.ArriveBy)
+	value, err := At(endDate(date, end), end.ArriveBy)
 	if err != nil {
-		return time.Time{}, Invalid("end.arriveBy が不正です")
+		return time.Time{}, Invalid("end.date / end.arriveBy が不正です")
 	}
 	return value, nil
 }
@@ -104,7 +111,7 @@ func ValidatePlan(input PlanInput) error {
 		return err
 	}
 	if !end.After(start) {
-		return Invalid("end.arriveBy は出発後の同日内の時刻を指定してください")
+		return Invalid("終了日時は出発日時より後を指定してください")
 	}
 	return ValidateVisits(input.Places)
 }
@@ -150,6 +157,23 @@ func OpenAt(hours *Hours, arrival time.Time, stay int) (time.Time, *OpeningHours
 		}
 	}
 	return best, window, !best.IsZero()
+}
+
+func OpenAtUntil(hours *Hours, arrival time.Time, stay int, limit time.Time) (time.Time, *OpeningHours, bool) {
+	cursor := arrival.In(JST)
+	// 週の営業時間は繰り返すため、次の1週間に入らなければそれ以降も入らない。
+	searchEnd := cursor.AddDate(0, 0, 7)
+	if limit.Before(searchEnd) {
+		searchEnd = limit
+	}
+	for !cursor.After(searchEnd) {
+		start, window, ok := OpenAt(hours, cursor, stay)
+		if ok && !start.Add(time.Duration(stay)*time.Minute).After(limit) {
+			return start, window, true
+		}
+		cursor = time.Date(cursor.Year(), cursor.Month(), cursor.Day()+1, 0, 0, 0, 0, JST)
+	}
+	return time.Time{}, nil, false
 }
 
 // Places は行き先と、placeId で指定された出発地・終わる場所の施設情報を取得する。
@@ -221,6 +245,7 @@ type visitFact struct {
 	Priority     string        `json:"priority"`
 	StayMin      int           `json:"stayMin"`
 	OpeningHours *OpeningHours `json:"openingHours"`
+	OpeningAt    string        `json:"openingAt,omitempty"`
 }
 
 // editContext は編集時に AI に渡す、変更されていない部分と変更点。
@@ -234,12 +259,18 @@ type editContext struct {
 
 // orderPrompt は訪問順を尋ねるプロンプト。edit があれば部分的な変更として扱うよう指示する。
 func orderPrompt(input PlanInput, places map[string]Place, base []Visit, edit *editContext) Prompt {
-	day, _ := time.ParseInLocation("2006-01-02", input.Date, JST)
+	depart, _ := At(input.Date, input.Start.DepartAt)
+	deadline, _ := At(endDate(input.Date, input.End), input.End.ArriveBy)
 	facts := []visitFact{}
 	points := map[string]Point{}
 	for _, visit := range input.Places {
 		place := places[visit.PlaceID]
-		facts = append(facts, visitFact{PlaceID: visit.PlaceID, Name: place.Name, Priority: visit.Priority, StayMin: visit.StayMin, OpeningHours: DayHours(nil, place.Hours, day)})
+		opens, hours, ok := OpenAtUntil(place.Hours, depart, visit.StayMin, deadline)
+		fact := visitFact{PlaceID: visit.PlaceID, Name: place.Name, Priority: visit.Priority, StayMin: visit.StayMin, OpeningHours: hours}
+		if ok {
+			fact.OpeningAt = opens.Format(time.RFC3339)
+		}
+		facts = append(facts, fact)
 		points[visit.PlaceID] = place.Location
 	}
 	if input.Start.Location != nil {
@@ -254,8 +285,8 @@ func orderPrompt(input PlanInput, places map[string]Place, base []Visit, edit *e
 	}
 	data := map[string]any{
 		"date":          input.Date,
-		"start":         map[string]string{"name": input.Start.Name, "departAt": input.Start.DepartAt},
-		"end":           map[string]string{"name": input.End.Name, "arriveBy": input.End.ArriveBy},
+		"start":         map[string]string{"name": input.Start.Name, "date": input.Date, "departAt": input.Start.DepartAt},
+		"end":           map[string]string{"name": input.End.Name, "date": endDate(input.Date, input.End), "arriveBy": input.End.ArriveBy},
 		"places":        facts,
 		"distanceKm":    distanceTable(points),
 		"baselineOrder": baseline,
@@ -263,11 +294,11 @@ func orderPrompt(input PlanInput, places map[string]Place, base []Visit, edit *e
 	rules := []string{
 		"placeIds には places の placeId をすべて1回ずつ入れる。",
 		"priority が must の施設を、営業時間内かつ end.arriveBy までに終わる位置に必ず置く。want、optional の順に優先する。",
-		"openingHours が早く閉まる施設や遅く開く施設は、営業時間に合う位置に置く。null は営業時間が不明という意味。",
+		"openingAt は出発日時以降に滞在できる最初の営業区間の開始日時。openingHours と合わせて訪問日と時刻を考える。openingHours の null は営業時間が不明という意味。",
 		"distanceKm（start・end・施設間の直線距離）を見て、行ったり来たりしない順にする。最後の施設から end へ向かうことも考える。",
 		"baselineOrder は直線距離だけで作った参考の順番。営業時間や優先度で不都合がなければ大きく変えなくてよい。",
 	}
-	task := "日帰り旅程の訪問順を決めてください。"
+	task := "旅程の訪問順を決めてください。"
 	if edit != nil {
 		data["edit"] = edit
 		task = "編集された旅程の、まだ訪れていない部分の訪問順を決めてください。"
@@ -337,12 +368,13 @@ func (a *App) schedule(ctx context.Context, input PlanInput, places map[string]P
 	if err != nil {
 		return Itinerary{}, Invalid("出発時刻が不正です")
 	}
-	arriveBy, err := At(input.Date, input.End.ArriveBy)
+	arriveBy, err := At(endDate(input.Date, input.End), input.End.ArriveBy)
 	if err != nil {
 		return Itinerary{}, Invalid("終わる場所に着きたい時刻が不正です")
 	}
-	day, _ := time.ParseInLocation("2006-01-02", input.Date, JST)
+	day, _ := time.ParseInLocation("2006-01-02", endDate(input.Date, input.End), JST)
 	value := Itinerary{Title: input.Title, Date: input.Date, Start: input.Start, End: input.End, Items: []Item{}, Legs: []Leg{}, Dropped: []Dropped{}, ExpiresAt: day.AddDate(0, 0, 30).Format(time.RFC3339)}
+	value.End.Date = endDate(input.Date, input.End)
 	value.Start.DepartAt = depart.Format(time.RFC3339)
 	from := input.Start.Waypoint()
 	fromID := "start"
@@ -351,7 +383,7 @@ func (a *App) schedule(ctx context.Context, input PlanInput, places map[string]P
 		if !ok {
 			return Itinerary{}, Upstream()
 		}
-		leg, err := a.route(ctx, cache, from, Waypoint{PlaceID: p.PlaceID}, depart)
+		leg, err := a.route(ctx, cache, from, Waypoint{PlaceID: p.PlaceID, Location: p.Location, HasLocation: true}, depart)
 		if err != nil {
 			return Itinerary{}, err
 		}
@@ -359,8 +391,8 @@ func (a *App) schedule(ctx context.Context, input PlanInput, places map[string]P
 		if err != nil {
 			return Itinerary{}, Upstream()
 		}
-		start, hours, ok := OpenAt(p.Hours, arrival, visit.StayMin)
-		if !ok || start.Add(time.Duration(visit.StayMin)*time.Minute).After(arriveBy) {
+		start, hours, ok := OpenAtUntil(p.Hours, arrival, visit.StayMin, arriveBy)
+		if !ok {
 			return Itinerary{}, infeasible(visit.PlaceID)
 		}
 		item := Item{
@@ -374,7 +406,7 @@ func (a *App) schedule(ctx context.Context, input PlanInput, places map[string]P
 		leg.ToItemID = item.ItemID
 		value.Items = append(value.Items, item)
 		value.Legs = append(value.Legs, leg)
-		from = Waypoint{PlaceID: p.PlaceID}
+		from = Waypoint{PlaceID: p.PlaceID, Location: p.Location, HasLocation: true}
 		fromID = item.ItemID
 		depart = start.Add(time.Duration(visit.StayMin) * time.Minute)
 	}

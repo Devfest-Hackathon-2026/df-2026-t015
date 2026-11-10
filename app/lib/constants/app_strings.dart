@@ -15,7 +15,7 @@ abstract final class AppStrings {
 
   // 旅程一覧（F-08、F-09、F-11）
   static const listTitle = 'わたしの旅程';
-  static const listSubtitle = '1 日ごとに旅程をつくれます';
+  static const listSubtitle = '日をまたぐ旅程もつくれます';
   static const listTodayPrefix = '今日・';
   static const listUpcoming = 'これから';
   static const listPast = '終わった旅';
@@ -53,7 +53,8 @@ abstract final class AppStrings {
   static const planTopBarEdit = '旅程を編集する';
   static const planCloseNew = '作らずに旅程一覧に戻る';
   static const planCloseEdit = '変更せずに旅程に戻る';
-  static const planDateLabel = '旅行日';
+  static const planDateLabel = '開始日';
+  static const planEndDateLabel = '終了日';
   static const planChangeSuffix = 'を変える';
   static const planTitleLabel = '旅程の名前';
   static const planTitleHint = '空欄なら自動でつけます';
@@ -84,7 +85,7 @@ abstract final class AppStrings {
   static const planTooMany = '行き先は 10 件までです';
   static const planNeedStart = '出発地を選んでください';
   static const planStartLocked = '開始済みの旅程は、同じ旅行日のまま出発地・出発時刻を変更できません';
-  static const planInvalidTimeRange = '終わりの時刻は出発時刻より後にしてください';
+  static const planInvalidTimeRange = '終了日時は出発日時より後にしてください';
   static const planMustInfeasible = '「必須」の予定がすべては入りきりません。優先度か終わりたい時刻を見直してください';
   static const planEndInfeasible = '行き先を外しても、終わりたい時刻までに終わる場所に着けません。時刻を見直してください';
   static const planItineraryLimit = '保存できる旅程の上限に達しています。使わない旅程を削除してください';

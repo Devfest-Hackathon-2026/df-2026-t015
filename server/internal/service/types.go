@@ -74,6 +74,7 @@ type Start struct {
 // End は終わる場所と時刻（Endpoint ＋ arriveBy, arriveAt）。
 // arriveBy は着きたい時刻（HH:mm）、arriveAt は着く予定の日時（出力のみ）。
 type End struct {
+	Date     string  `json:"date,omitempty"`
 	PlaceID  *string `json:"placeId"`
 	Name     string  `json:"name"`
 	Location *Point  `json:"location,omitempty"`
@@ -83,18 +84,21 @@ type End struct {
 
 // Waypoint は経路計算に渡す地点。施設なら PlaceID、それ以外は Location を使う。
 type Waypoint struct {
-	PlaceID  string
-	Location Point
+	PlaceID     string
+	Location    Point
+	HasLocation bool
 }
 
 func pointWaypoint(id *string, location *Point) Waypoint {
-	if id != nil && *id != "" {
-		return Waypoint{PlaceID: *id}
+	value := Waypoint{}
+	if id != nil {
+		value.PlaceID = *id
 	}
 	if location != nil {
-		return Waypoint{Location: *location}
+		value.Location = *location
+		value.HasLocation = true
 	}
-	return Waypoint{}
+	return value
 }
 
 func (s Start) Waypoint() Waypoint { return pointWaypoint(s.PlaceID, s.Location) }

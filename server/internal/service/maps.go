@@ -3,19 +3,18 @@ package service
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 )
 
-// Maps は Places API (New) と Routes API の呼び出し先。Key があれば API キーで、
+// Maps は Google Places と国内経路検索の呼び出し先。Places は Key があれば API キーで、
 // なければ ADC のトークン（HTTP に付けるクライアントを渡す）と課金先の Project で呼ぶ。
 type Maps struct {
 	Key     string
 	HTTP    *http.Client
 	Project string
+	Transit *Transit
 }
 
 func (m *Maps) mode() string {
@@ -174,98 +173,31 @@ func (w Waypoint) Key() string {
 	return fmt.Sprintf("geo:%.6f,%.6f", w.Location.Lat, w.Location.Lng)
 }
 
-func (w Waypoint) routeJSON() map[string]any {
-	if w.PlaceID != "" {
-		return map[string]any{"placeId": w.PlaceID}
+func (m *Maps) location(ctx context.Context, waypoint Waypoint) (Point, error) {
+	if waypoint.HasLocation || waypoint.PlaceID == "" {
+		if !ValidPoint(waypoint.Location) {
+			return Point{}, Invalid("地点が不正です")
+		}
+		return waypoint.Location, nil
 	}
-	return map[string]any{"location": map[string]any{"latLng": map[string]float64{"latitude": w.Location.Lat, "longitude": w.Location.Lng}}}
+	place, err := m.Details(ctx, waypoint.PlaceID)
+	return place.Location, err
 }
 
 func (m *Maps) Route(ctx context.Context, from, to Waypoint, depart time.Time) (Leg, error) {
-	best := Leg{Mode: "walk", DepartAt: depart.Format(time.RFC3339)}
 	if from.Key() == to.Key() {
-		best.ArriveAt = best.DepartAt
-		return best, nil
+		return Leg{Mode: "walk", DepartAt: depart.Format(time.RFC3339), ArriveAt: depart.Format(time.RFC3339)}, nil
 	}
-	found := false
-	for _, mode := range []string{"WALK", "TRANSIT"} {
-		input := map[string]any{"origin": from.routeJSON(), "destination": to.routeJSON(), "travelMode": mode, "languageCode": "ja"}
-		if mode == "TRANSIT" {
-			// Maps の公共交通検索は過去7日〜未来100日だけを受け付ける。
-			if depart.Before(time.Now().Add(-7*24*time.Hour)) || depart.After(time.Now().Add(100*24*time.Hour)) {
-				continue
-			}
-			input["departureTime"] = depart.UTC().Format(time.RFC3339)
-		}
-		var output struct {
-			Routes []struct {
-				Duration string `json:"duration"`
-				Legs     []struct {
-					Steps []struct {
-						Transit *struct {
-							Line struct {
-								Name      string `json:"name"`
-								NameShort string `json:"nameShort"`
-								Vehicle   struct {
-									Type string `json:"type"`
-								} `json:"vehicle"`
-							} `json:"transitLine"`
-							Stops struct {
-								ArrivalTime string `json:"arrivalTime"`
-							} `json:"stopDetails"`
-						} `json:"transitDetails"`
-					} `json:"steps"`
-				} `json:"legs"`
-			} `json:"routes"`
-		}
-		err := Request(ctx, m.HTTP, "POST", "https://routes.googleapis.com/directions/v2:computeRoutes", m.headers("routes.duration,routes.legs.steps.transitDetails"), input, &output)
-		if err != nil {
-			return Leg{}, err
-		}
-		if len(output.Routes) == 0 {
-			continue
-		}
-		route := output.Routes[0]
-		duration, err := time.ParseDuration(route.Duration)
-		if err != nil || duration < 0 {
-			return Leg{}, Upstream()
-		}
-		leg := Leg{Mode: "walk", DepartAt: depart.Format(time.RFC3339)}
-		names := []string{}
-		for _, part := range route.Legs {
-			for _, step := range part.Steps {
-				if step.Transit == nil {
-					continue
-				}
-				leg.Mode = "train"
-				if step.Transit.Line.Vehicle.Type == "BUS" {
-					leg.Mode = "bus"
-				}
-				name := step.Transit.Line.NameShort
-				if name == "" {
-					name = step.Transit.Line.Name
-				}
-				if name != "" {
-					names = append(names, name)
-				}
-				if arrival, err := time.Parse(time.RFC3339, step.Transit.Stops.ArrivalTime); err == nil && arrival.Sub(depart) > duration {
-					duration = arrival.Sub(depart)
-				}
-			}
-		}
-		leg.DurationMin = int(math.Ceil(duration.Minutes()))
-		leg.ArriveAt = depart.Add(time.Duration(leg.DurationMin) * time.Minute).Format(time.RFC3339)
-		if len(names) > 0 {
-			name := strings.Join(names, " / ")
-			leg.LineName = &name
-		}
-		if !found || leg.DurationMin < best.DurationMin {
-			best = leg
-			found = true
-		}
+	if m.Transit == nil || m.Transit.Key == "" {
+		return Leg{}, Fail(503, "TRANSIT_UNAVAILABLE", "公共交通の接続設定がありません。サーバーに MIXWAY_API_KEY を設定してください")
 	}
-	if !found {
-		return Leg{}, Upstream()
+	origin, err := m.location(ctx, from)
+	if err != nil {
+		return Leg{}, err
 	}
-	return best, nil
+	destination, err := m.location(ctx, to)
+	if err != nil {
+		return Leg{}, err
+	}
+	return m.Transit.Route(ctx, origin, destination, depart)
 }

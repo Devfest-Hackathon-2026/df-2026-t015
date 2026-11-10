@@ -228,7 +228,7 @@ class _ChangeCard extends StatelessWidget {
     final name = item?.name ?? change.before?.name ?? '';
     final detailStyle = texts.bodySmall?.copyWith(color: muted);
 
-    String? time(DateTime? t) => t == null ? null : Format.time(t);
+    String? time(DateTime? t) => t == null ? null : Format.dateTime(t);
 
     final List<Widget> content = switch (change.type) {
       ChangeType.replace => [
@@ -277,7 +277,10 @@ class _ChangeCard extends StatelessWidget {
             if (item != null) LabelChip.priority(item!.priority, tokens),
           ],
         ),
-        if (time(item?.startAt ?? change.before?.startAt) case final t?)
+        if (time(
+              change.after?.startAt ?? item?.startAt ?? change.before?.startAt,
+            )
+            case final t?)
           Text('$t${AppStrings.replanKeepTimeSuffix}', style: detailStyle),
       ],
       ChangeType.drop => [
@@ -323,7 +326,7 @@ class _SummaryCompare extends StatelessWidget {
         Expanded(
           child: SummaryTile(
             label: AppStrings.todayEndAt,
-            value: Format.time(after.endAt),
+            value: Format.dateTime(after.endAt),
             note: _signed(endDiff, Format.duration),
           ),
         ),

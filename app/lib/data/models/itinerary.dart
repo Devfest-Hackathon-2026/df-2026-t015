@@ -134,6 +134,7 @@ abstract class ItineraryEnd with _$ItineraryEnd {
     String? placeId,
     required String name,
     LatLng? location,
+    String? date,
 
     /// 着きたい時刻（HH:mm）
     required String arriveBy,
